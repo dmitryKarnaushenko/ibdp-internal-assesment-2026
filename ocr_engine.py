@@ -1,0 +1,398 @@
+import os
+import json
+import re
+from datetime import datetime, date, timedelta
+import numpy as np
+import pandas as pd
+
+# Imaging / OCR dependencies
+# These are optional imports with fallbacks in case they're not available
+try:
+    import cv2  # OpenCV for image processing
+except Exception:
+    cv2 = None
+
+try:
+    from PIL import Image  # Pillow for image handling
+except Exception:
+    Image = None
+
+try:
+    import easyocr  # EasyOCR for text recognition
+except Exception:
+    easyocr = None
+
+# Output paths for saving parsed data
+OUT_DIR = "userdata"  # Directory where all output files will be stored
+RAW_PATH = os.path.join(OUT_DIR, "raw_ocr.txt")  # Raw OCR output text
+CSV_PATH = os.path.join(OUT_DIR, "shifts.csv")  # Parsed shifts in CSV format
+JSON_PATH = os.path.join(OUT_DIR, "shifts.json")  # Parsed shifts in JSON format
+XLSX_PATH = os.path.join(OUT_DIR, "shifts.xlsx")  # Parsed shifts in Excel format
+DEBUG_PATH = os.path.join(OUT_DIR, "parsed_debug.txt")  # Debug information
+
+# Configuration variables
+TARGET_NAME = os.environ.get("TARGET_NAME", "NINA ARONOVA")  # Name to look for in schedule
+SHIFT_MAP = {  # Mapping of shift codes to shift details
+    "M": ("Morning", 6, 14),  # Morning shift: 6 AM to 2 PM
+    "T": ("Evening", 14, 22),  # Evening shift: 2 PM to 10 PM
+    "N": ("Night", 22, 6)  # Night shift: 10 PM to 6 AM (next day)
+}
+
+# Global variable to store the EasyOCR reader instance
+_reader = None
+
+
+def _get_reader():
+
+    #Initialize and return the EasyOCR reader.
+
+    global _reader
+    if _reader is None:
+        if easyocr is None:
+            raise RuntimeError("easyocr not installed")
+        # Initialize the reader for English language, without GPU acceleration
+        _reader = easyocr.Reader(['en'], gpu=False)
+    return _reader
+
+
+def _ensure_deps():
+    """
+    Check if all required dependencies are available.
+    Returns an error message and boolean status.
+    """
+    if cv2 is None:
+        return "[ERROR] OpenCV (cv2) not installed.", False
+    if Image is None:
+        return "[ERROR] Pillow not installed.", False
+    if easyocr is None:
+        return "[ERROR] EasyOCR not installed.", False
+    return "", True
+
+
+def _read_image(path):
+    """
+    Read an image from file and convert it to formats suitable for OpenCV and PIL.
+    Returns both PIL Image and OpenCV image formats.
+    """
+    pil = Image.open(path).convert("RGB")  # Open image with PIL and ensure RGB format
+    # Convert PIL image to OpenCV format (BGR instead of RGB)
+    cv_img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+    return pil, cv_img
+
+
+def dump_raw_ocr(path):
+    """
+    Perform raw OCR on an image and return the text with confidence scores.
+    This function doesn't try to parse the structure, just extracts all text.
+    """
+    okmsg, ok = _ensure_deps()
+    if not ok:
+        return okmsg
+    if not os.path.exists(path):
+        return f"[ERROR] File not found: {path}"
+
+    # Read the image
+    pil, cv_img = _read_image(path)
+    reader = _get_reader()
+
+    # Perform OCR on the image
+    res = reader.readtext(np.array(pil))
+
+    # Format the results with text and confidence scores
+    lines = []
+    for item in res:
+        if len(item) == 3:
+            _, text, conf = item
+            lines.append(f"{text} (conf={conf:.2f})")
+        else:
+            lines.append(str(item))
+
+    return "\n".join(lines)
+
+
+def save_raw_text(text):
+    """
+    Save the raw OCR text to a file for debugging purposes.
+    """
+    os.makedirs(OUT_DIR, exist_ok=True)
+    with open(RAW_PATH, "w", encoding="utf-8") as f:
+        f.write(text or "")
+    return RAW_PATH
+
+
+def parse_schedule(cv_img):
+    """
+    Main function to parse a schedule image.
+    This function uses the bounding box method to extract shifts for the target person.
+    """
+    today = date.today()
+    year, month = today.year, today.month
+
+    # Assume a standard month with up to 31 days
+    days = list(range(1, 32))
+
+    # Use the bounding box method to parse the schedule
+    parsed = _bbox_map_parse(cv_img, days)
+
+    if parsed is None:
+        # Return empty result if parsing fails completely
+        return {"person": TARGET_NAME, "year": year, "month": month, "days": days, "records": []}
+
+    return parsed
+
+
+def _bbox_map_parse(cv_img, days):
+    """
+    Parse schedule using EasyOCR bounding boxes.
+    This method:
+    1. Finds all text in the image with their positions
+    2. Locates the target person's name
+    3. Finds shift codes (M, T, N) near the target's row
+    4. Maps shift codes to days based on their horizontal position
+
+    This is a fallback method that works even when table grid lines aren't detectable.
+    """
+    reader = _get_reader()
+
+    # Perform OCR with detailed information (including bounding boxes)
+    res = reader.readtext(cv_img, detail=1)  # Returns (bbox, text, confidence)
+    if not res:
+        return None
+
+    # Process each detected text token
+    tokens = []
+    for bbox, text, conf in res:
+        # bbox contains 4 points: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+        # Calculate center point of the bounding box
+        xs_bbox = [pt[0] for pt in bbox]
+        ys_bbox = [pt[1] for pt in bbox]
+        cx = sum(xs_bbox) / 4.0  # Center X coordinate
+        cy = sum(ys_bbox) / 4.0  # Center Y coordinate
+
+        # Store token information
+        tokens.append({"text": text.strip(), "conf": float(conf), "cx": cx, "cy": cy})
+
+    # Step 1: Find the target person's name in the detected text
+    target_candidates = [t for t in tokens if TARGET_NAME.upper() in t["text"].upper()]
+
+    # If exact match not found, try fuzzy matching on first name
+    if not target_candidates:
+        first = TARGET_NAME.split()[0]
+        target_candidates = [t for t in tokens if first and first.upper() in t["text"].upper()]
+
+    if not target_candidates:
+        return None  # Target person not found in the schedule
+
+    # Select the candidate with highest confidence
+    target = max(target_candidates, key=lambda x: x["conf"])
+    target_y = target["cy"]  # Y-coordinate of the target's row
+
+    # Step 2: Calculate vertical tolerance for finding elements in the same row
+    # This helps account for slight variations in text positioning
+    ys_centers = sorted({int(round(t["cy"])) for t in tokens})
+    if len(ys_centers) >= 2:
+        # Calculate median gap between text rows
+        gaps = [ys_centers[i + 1] - ys_centers[i] for i in range(len(ys_centers) - 1)]
+        median_gap = sorted(gaps)[len(gaps) // 2] if gaps else 40
+        y_tol = max(20, int(median_gap * 0.6))  # Tolerance is 60% of median gap
+    else:
+        y_tol = 30  # Default tolerance
+
+    # Step 3: Find day numbers in the header (above the target's row)
+    day_tokens = []
+    for t in tokens:
+        # Look for tokens with digits that are above the target's row
+        if t["cy"] < target_y - y_tol and re.search(r"\d+", t["text"]):
+            day_tokens.append(t)
+
+    # Sort day tokens by their X position (left to right)
+    day_tokens.sort(key=lambda x: x["cx"])
+
+    # Step 4: Map day numbers to X positions
+    if day_tokens:
+        # If we found day tokens, use them to establish X positions
+        day_x_map = {}
+        for i, day in enumerate(days):
+            if i < len(day_tokens):
+                day_x_map[day] = day_tokens[i]["cx"]
+            else:
+                # For days beyond detected tokens, estimate position
+                img_w = cv_img.shape[1]
+                day_x_map[day] = (i + 0.5) * img_w / len(days)
+    else:
+        # If no day tokens found, assume equal spacing across the image
+        img_w = cv_img.shape[1]
+        day_x_map = {day: (i + 0.5) * img_w / len(days) for i, day in enumerate(days)}
+
+    # Step 5: Find shift codes in the same row as the target
+    shift_tokens = []
+    for t in tokens:
+        # Look for tokens containing M, T, or N that are in the same row as the target
+        if abs(t["cy"] - target_y) < y_tol and re.search(r"[MTN]", t["text"].upper()):
+            shift_tokens.append(t)
+
+    # Step 6: Map shift codes to days based on X position
+    day_shift_map = {}
+    for t in shift_tokens:
+        # Find the day whose X position is closest to this shift token
+        closest_day = min(days, key=lambda d: abs(t["cx"] - day_x_map[d]))
+
+        # Extract the shift code (M, T, or N)
+        m = re.search(r"[MTN]", t["text"].upper())
+        code = m.group(0) if m else ""
+
+        if code in SHIFT_MAP:
+            # Keep the highest confidence token for each day
+            if closest_day not in day_shift_map or t["conf"] > day_shift_map[closest_day][1]:
+                day_shift_map[closest_day] = (code, t["conf"])
+
+    # Step 7: Build the parsed records with shift information
+    today = date.today()
+    year, month = today.year, today.month
+    parsed = {
+        "person": TARGET_NAME,
+        "year": year,
+        "month": month,
+        "days": days,
+        "records": []
+    }
+
+    for day, (code, conf) in day_shift_map.items():
+        shift_type, start_h, end_h = SHIFT_MAP[code]
+
+        try:
+            dt = date(year, month, int(day))
+        except Exception:
+            continue  # Skip invalid dates
+
+        # Calculate shift times based on shift type
+        if shift_type == "Night":
+            # Night shift spans two days (10 PM to 6 AM)
+            start_dt = datetime(year, month, dt.day, 22, 0)
+            end_dt = start_dt + timedelta(hours=8)
+            hours = 8
+        else:
+            # Day shifts are within the same day
+            start_dt = datetime(year, month, dt.day, start_h, 0)
+            end_dt = datetime(year, month, dt.day, end_h, 0)
+            hours = end_h - start_h
+
+        # Create a record for this shift
+        rec = {
+            "person": TARGET_NAME,
+            "date": dt.isoformat(),
+            "dow": dt.strftime("%a"),  # Day of week abbreviation
+            "shift_code": code,
+            "shift_type": shift_type,
+            "start": start_dt.strftime("%Y-%m-%d %H:%M"),
+            "end": end_dt.strftime("%Y-%m-%d %H:%M"),
+            "hours": hours
+        }
+        parsed["records"].append(rec)
+
+    # Save debug information
+    _write_fallback_debug(tokens, parsed)
+    return parsed
+
+
+def _write_fallback_debug(tokens, parsed):
+    """
+    Save debug information about the parsing process.
+    This helps with troubleshooting when the parsing doesn't work as expected.
+    """
+    os.makedirs(OUT_DIR, exist_ok=True)
+    lines = []
+
+    # Add information about all detected tokens
+    lines.append("=== TOKENS SAMPLE ===")
+    for t in tokens[:200]:  # Limit to first 200 tokens to avoid huge files
+        lines.append(f"{t['text']} (conf={t['conf']:.2f}) cx={t['cx']:.1f} cy={t['cy']:.1f}")
+
+    # Add the parsed result
+    lines.append("\n=== PARSED ===")
+    lines.append(json.dumps(parsed, ensure_ascii=False, indent=2))
+
+    # Write to debug file
+    with open(DEBUG_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def save_outputs(parsed):
+    """
+    Save the parsed shifts to multiple file formats (CSV, JSON, Excel).
+    This provides output in various formats for different use cases.
+    """
+    os.makedirs(OUT_DIR, exist_ok=True)
+
+    # Convert to DataFrame for easier manipulation
+    df = pd.DataFrame(parsed.get("records", []))
+
+    # Save as CSV
+    try:
+        df.to_csv(CSV_PATH, index=False, encoding="utf-8")
+    except Exception:
+        # Create empty file if CSV saving fails
+        with open(CSV_PATH, "w", encoding="utf-8") as f:
+            f.write("")
+
+    # Save as JSON
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(parsed, f, ensure_ascii=False, indent=2)
+
+    # Save as Excel (if openpyxl is available)
+    try:
+        with pd.ExcelWriter(XLSX_PATH, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Shifts")
+    except Exception:
+        pass  # Skip Excel export if it fails
+
+
+def process_image(path):
+    """
+    Main function to process a schedule image.
+    Handles the entire workflow from image to parsed shifts.
+    Returns: (raw_text, status_message, parsed_data)
+    """
+    # Check dependencies
+    okmsg, ok = _ensure_deps()
+    if not ok:
+        return okmsg, "Status: missing dependency", None
+
+    # Check if file exists
+    if not os.path.exists(path):
+        return "[ERROR] File not found.", "Status: file missing", None
+
+    # Step 1: Perform raw OCR and save results
+    try:
+        raw_text = dump_raw_ocr(path)
+    except Exception as e:
+        raw_text = f"[ERROR] raw OCR failed: {e}"
+
+    try:
+        save_raw_text(raw_text)
+    except Exception:
+        pass  # Continue even if saving raw text fails
+
+    # Step 2: Read the image for parsing
+    try:
+        pil, cv_img = _read_image(path)
+    except Exception as e:
+        return raw_text, f"[ERROR] Failed to open image: {e}", None
+
+    # Step 3: Parse the schedule
+    try:
+        parsed = parse_schedule(cv_img)
+    except Exception as e:
+        parsed = None
+
+    # Step 4: Handle parsing results
+    if parsed is None:
+        return raw_text, "Status: parse failed", None
+
+    # Create status message with parsing results
+    info = f"Status: parsed {len(parsed.get('records', []))} shifts for {parsed.get('person')}"
+
+    # Step 5: Save outputs in various formats
+    save_outputs(parsed)
+
+    return raw_text, info, parsed

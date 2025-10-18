@@ -1,0 +1,115 @@
+=== TOKENS SAMPLE ===
+Name (conf=1.00) cx=138.0 cy=227.0
+1 L (conf=1.00) cx=372.0 cy=226.0
+2 M (conf=0.93) cx=603.0 cy=227.0
+3 X (conf=0.96) cx=836.0 cy=227.0
+4 ) (conf=0.59) cx=1067.0 cy=228.0
+5 V (conf=1.00) cx=1301.0 cy=227.0
+6 S (conf=0.79) cx=1533.0 cy=226.0
+7 D (conf=1.00) cx=1765.0 cy=226.0
+LVIRA JIMENES (conf=0.29) cx=139.0 cy=278.0
+M (conf=1.00) cx=372.0 cy=277.0
+T (conf=0.96) cx=606.0 cy=275.0
+N (conf=1.00) cx=837.0 cy=276.0
+T (conf=0.90) cx=1302.0 cy=275.0
+N (conf=1.00) cx=1533.0 cy=276.0
+M (conf=1.00) cx=1764.0 cy=276.0
+LOLA MIQUELI (conf=0.78) cx=139.0 cy=327.0
+T (conf=0.91) cx=373.0 cy=325.0
+N (conf=1.00) cx=607.0 cy=325.0
+" (conf=0.30) cx=1070.0 cy=326.0
+N (conf=1.00) cx=1306.0 cy=325.0
+ROCIO GARCIA (conf=0.97) cx=138.0 cy=377.0
+N (conf=1.00) cx=373.0 cy=374.0
+M (conf=1.00) cx=605.0 cy=375.0
+" (conf=0.33) cx=838.0 cy=374.0
+M (conf=1.00) cx=1302.0 cy=375.0
+" (conf=0.06) cx=1534.0 cy=373.0
+1 (conf=0.01) cx=1766.0 cy=372.0
+NINA ARONOVA (conf=0.86) cx=132.0 cy=426.0
+M (conf=1.00) cx=373.0 cy=425.0
+T (conf=0.85) cx=605.0 cy=420.0
+M (conf=1.00) cx=1069.0 cy=423.0
+T (conf=0.97) cx=1302.0 cy=424.0
+
+=== PARSED ===
+{
+  "person": "NINA ARONOVA",
+  "year": 2025,
+  "month": 9,
+  "days": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "records": [
+    {
+      "person": "NINA ARONOVA",
+      "date": "2025-09-01",
+      "dow": "Mon",
+      "shift_code": "M",
+      "shift_type": "Morning",
+      "start": "2025-09-01 06:00",
+      "end": "2025-09-01 14:00",
+      "hours": 8
+    },
+    {
+      "person": "NINA ARONOVA",
+      "date": "2025-09-02",
+      "dow": "Tue",
+      "shift_code": "T",
+      "shift_type": "Evening",
+      "start": "2025-09-02 14:00",
+      "end": "2025-09-02 22:00",
+      "hours": 8
+    },
+    {
+      "person": "NINA ARONOVA",
+      "date": "2025-09-04",
+      "dow": "Thu",
+      "shift_code": "M",
+      "shift_type": "Morning",
+      "start": "2025-09-04 06:00",
+      "end": "2025-09-04 14:00",
+      "hours": 8
+    },
+    {
+      "person": "NINA ARONOVA",
+      "date": "2025-09-05",
+      "dow": "Fri",
+      "shift_code": "T",
+      "shift_type": "Evening",
+      "start": "2025-09-05 14:00",
+      "end": "2025-09-05 22:00",
+      "hours": 8
+    }
+  ]
+}
