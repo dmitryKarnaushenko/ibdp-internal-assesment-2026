@@ -5,22 +5,10 @@ from datetime import datetime, date, timedelta
 import numpy as np
 import pandas as pd
 
-# Imaging / OCR dependencies
-# These are optional imports with fallbacks in case they're not available
-try:
-    import cv2  # OpenCV for image processing
-except Exception:
-    cv2 = None
-
-try:
-    from PIL import Image  # Pillow for image handling
-except Exception:
-    Image = None
-
-try:
-    import easyocr  # EasyOCR for text recognition
-except Exception:
-    easyocr = None
+# Imaging / OCR dependencies (required)
+import cv2  # OpenCV for image processing
+from PIL import Image  # Pillow for image handling
+import easyocr  # EasyOCR for text recognition
 
 # Output paths for saving parsed data
 OUT_DIR = "userdata"  # Directory where all output files will be stored
@@ -37,6 +25,7 @@ SHIFT_MAP = {  # Mapping of shift codes to shift details
     "T": ("Evening", 14, 22),  # Evening shift: 2 PM to 10 PM
     "N": ("Night", 22, 6)  # Night shift: 10 PM to 6 AM (next day)
 }
+MIN_TOKEN_CONFIDENCE = 0.25  # Minimum confidence to consider a token in parsing logic
 
 # Global variable to store the EasyOCR reader instance
 _reader = None
@@ -48,25 +37,49 @@ def _get_reader():
 
     global _reader
     if _reader is None:
-        if easyocr is None:
-            raise RuntimeError("easyocr not installed")
         # Initialize the reader for English language, without GPU acceleration
         _reader = easyocr.Reader(['en'], gpu=False)
     return _reader
 
 
-def _ensure_deps():
+def _prepare_for_ocr(cv_img):
     """
-    Check if all required dependencies are available.
-    Returns an error message and boolean status.
+    Improve image readability for OCR by boosting contrast and reducing noise.
+
+    A CLAHE pass makes faint table text easier to pick up, while a light
+    denoise step prevents artifacts from being amplified when the contrast is
+    increased.
     """
-    if cv2 is None:
-        return "[ERROR] OpenCV (cv2) not installed.", False
-    if Image is None:
-        return "[ERROR] Pillow not installed.", False
-    if easyocr is None:
-        return "[ERROR] EasyOCR not installed.", False
-    return "", True
+    if cv_img is None:
+        raise ValueError("cv_img is required for preprocessing")
+
+    if len(cv_img.shape) == 3 and cv_img.shape[2] == 3:
+        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = cv_img
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    denoised = cv2.fastNlMeansDenoising(enhanced, h=10, templateWindowSize=7, searchWindowSize=21)
+    return denoised
+
+
+def _run_easyocr(cv_img, detail=1):
+    """
+    Run EasyOCR with consistent preprocessing and relaxed detection thresholds.
+
+    The low_text and text_threshold parameters are aligned to 0.25 to make the
+    detector more permissive for faint table entries.
+    """
+    reader = _get_reader()
+    prepared = _prepare_for_ocr(cv_img)
+    return reader.readtext(
+        prepared,
+        detail=detail,
+        text_threshold=0.25,
+        low_text=0.25,
+        link_threshold=0.3,
+    )
 
 
 def _read_image(path):
@@ -85,18 +98,14 @@ def dump_raw_ocr(path):
     Perform raw OCR on an image and return the text with confidence scores.
     This function doesn't try to parse the structure, just extracts all text.
     """
-    okmsg, ok = _ensure_deps()
-    if not ok:
-        return okmsg
     if not os.path.exists(path):
         return f"[ERROR] File not found: {path}"
 
     # Read the image
     pil, cv_img = _read_image(path)
-    reader = _get_reader()
 
-    # Perform OCR on the image
-    res = reader.readtext(np.array(pil))
+    # Perform OCR on the image with preprocessing and relaxed thresholds
+    res = _run_easyocr(cv_img)
 
     # Format the results with text and confidence scores
     lines = []
@@ -135,8 +144,7 @@ def parse_schedule(cv_img):
     parsed = _bbox_map_parse(cv_img, days)
 
     if parsed is None:
-        # Return empty result if parsing fails completely
-        return {"person": TARGET_NAME, "year": year, "month": month, "days": days, "records": []}
+        raise RuntimeError("Schedule parsing failed")
 
     return parsed
 
@@ -149,19 +157,17 @@ def _bbox_map_parse(cv_img, days):
     2. Locates the target person's name
     3. Finds shift codes (M, T, N) near the target's row
     4. Maps shift codes to days based on their horizontal position
-
-    This is a fallback method that works even when table grid lines aren't detectable.
     """
-    reader = _get_reader()
-
     # Perform OCR with detailed information (including bounding boxes)
-    res = reader.readtext(cv_img, detail=1)  # Returns (bbox, text, confidence)
+    res = _run_easyocr(cv_img, detail=1)  # Returns (bbox, text, confidence)
     if not res:
         return None
 
     # Process each detected text token
     tokens = []
     for bbox, text, conf in res:
+        if float(conf) < MIN_TOKEN_CONFIDENCE:
+            continue
         # bbox contains 4 points: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
         # Calculate center point of the bounding box
         xs_bbox = [pt[0] for pt in bbox]
@@ -291,11 +297,11 @@ def _bbox_map_parse(cv_img, days):
         parsed["records"].append(rec)
 
     # Save debug information
-    _write_fallback_debug(tokens, parsed)
+    _write_debug(tokens, parsed)
     return parsed
 
 
-def _write_fallback_debug(tokens, parsed):
+def _write_debug(tokens, parsed):
     """
     Save debug information about the parsing process.
     This helps with troubleshooting when the parsing doesn't work as expected.
@@ -304,7 +310,7 @@ def _write_fallback_debug(tokens, parsed):
     lines = []
 
     # Add information about all detected tokens
-    lines.append("=== TOKENS SAMPLE ===")
+    lines.append(f"=== TOKENS SAMPLE (min_conf={MIN_TOKEN_CONFIDENCE}) ===")
     for t in tokens[:200]:  # Limit to first 200 tokens to avoid huge files
         lines.append(f"{t['text']} (conf={t['conf']:.2f}) cx={t['cx']:.1f} cy={t['cy']:.1f}")
 
@@ -353,11 +359,6 @@ def process_image(path):
     Handles the entire workflow from image to parsed shifts.
     Returns: (raw_text, status_message, parsed_data)
     """
-    # Check dependencies
-    okmsg, ok = _ensure_deps()
-    if not ok:
-        return okmsg, "Status: missing dependency", None
-
     # Check if file exists
     if not os.path.exists(path):
         return "[ERROR] File not found.", "Status: file missing", None
@@ -380,19 +381,12 @@ def process_image(path):
         return raw_text, f"[ERROR] Failed to open image: {e}", None
 
     # Step 3: Parse the schedule
-    try:
-        parsed = parse_schedule(cv_img)
-    except Exception as e:
-        parsed = None
-
-    # Step 4: Handle parsing results
-    if parsed is None:
-        return raw_text, "Status: parse failed", None
+    parsed = parse_schedule(cv_img)
 
     # Create status message with parsing results
     info = f"Status: parsed {len(parsed.get('records', []))} shifts for {parsed.get('person')}"
 
-    # Step 5: Save outputs in various formats
+    # Step 4: Save outputs in various formats
     save_outputs(parsed)
 
     return raw_text, info, parsed

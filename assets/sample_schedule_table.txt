@@ -1,0 +1,8 @@
+Sample schedule table (as expected by the parser)
+-------------------------------------------------
+| Employee       |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10 |
+|----------------+----+----+----+----+----+----+----+----+----+----|
+| NINA ARONOVA   |  M |  T |  N |    |  M |  M |    |  T |  N |    |
+| Other Employee |  T |    |  M |  N |    |    |  T |  M |    |  N |
+
+Legend: M = Morning (06:00-14:00), T = Evening (14:00-22:00), N = Night (22:00-06:00 next day)
