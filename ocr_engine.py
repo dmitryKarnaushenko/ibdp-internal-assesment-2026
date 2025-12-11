@@ -25,7 +25,7 @@ SHIFT_MAP = {  # Mapping of shift codes to shift details
     "T": ("Evening", 14, 22),  # Evening shift: 2 PM to 10 PM
     "N": ("Night", 22, 6)  # Night shift: 10 PM to 6 AM (next day)
 }
-MIN_TOKEN_CONFIDENCE = 0.25  # Minimum confidence to consider a token in parsing logic
+MIN_TOKEN_CONFIDENCE = 0.15  # Minimum confidence to consider a token in parsing logic
 
 # Global variable to store the EasyOCR reader instance
 _reader = None
@@ -58,10 +58,27 @@ def _prepare_for_ocr(cv_img):
     else:
         gray = cv_img
 
+    # Upscale smaller images so that faint numbers and letters are more legible
+    h, w = gray.shape[:2]
+    long_side = max(h, w)
+    if long_side < 1800:
+        scale = 1800 / long_side
+        gray = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
+
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
     denoised = cv2.fastNlMeansDenoising(enhanced, h=10, templateWindowSize=7, searchWindowSize=21)
-    return denoised
+
+    # Adaptive thresholding boosts low-contrast table entries without erasing strokes
+    binary = cv2.adaptiveThreshold(
+        denoised,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        9,
+    )
+    return binary
 
 
 def _run_easyocr(cv_img, detail=1):
@@ -200,9 +217,9 @@ def _bbox_map_parse(cv_img, days):
         # Calculate median gap between text rows
         gaps = [ys_centers[i + 1] - ys_centers[i] for i in range(len(ys_centers) - 1)]
         median_gap = sorted(gaps)[len(gaps) // 2] if gaps else 40
-        y_tol = max(20, int(median_gap * 0.6))  # Tolerance is 60% of median gap
+        y_tol = max(25, int(median_gap * 0.8))  # More lenient tolerance for noisy scans
     else:
-        y_tol = 30  # Default tolerance
+        y_tol = 35  # Default tolerance
 
     # Step 3: Find day numbers in the header (above the target's row)
     day_tokens = []
@@ -308,6 +325,10 @@ def _write_debug(tokens, parsed):
     """
     os.makedirs(OUT_DIR, exist_ok=True)
     lines = []
+
+    lines.append(
+        f"tokens_total={len(tokens)} | records_found={len(parsed.get('records', []))}"
+    )
 
     # Add information about all detected tokens
     lines.append(f"=== TOKENS SAMPLE (min_conf={MIN_TOKEN_CONFIDENCE}) ===")
