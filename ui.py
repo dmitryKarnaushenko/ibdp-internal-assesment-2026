@@ -8,8 +8,10 @@ from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.graphics import Color, Rectangle
+from kivy.graphics import Color, Rectangle, Ellipse, RoundedRectangle
+from kivy.uix.widget import Widget
 from kivy.core.window import Window  # Moved to top level import
+from kivy.resources import resource_find
 
 import ocr_engine
 
@@ -17,16 +19,56 @@ import ocr_engine
 os.makedirs("userdata", exist_ok=True)
 
 # Define the application's color scheme using hex values
-BG_COLOR = "#393E46"
-TEXT_COLOR = "#DFD0B8"
-BUTTON_COLOR = "#948979"
+BG_COLOR = "#14181D"
+CARD_COLOR = "#1E252D"
+TEXT_COLOR = "#F2F6FB"
+BUTTON_COLOR = "#2D4466"
+BUTTON_COLOR_ACTIVE = "#36598A"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
 SHIFT_COLORS = {
-    "M": (1, 1, 0, 1),
-    "T": (1, 0.6, 0, 1),
-    "N": (0.2, 0.2, 0.6, 1)
+    "M": (0.24, 0.62, 0.98, 1),
+    "T": (0.17, 0.73, 0.82, 1),
+    "N": (0.48, 0.43, 0.86, 1)
 }
+
+# Map human-readable shift types to consistent colors for statistics visuals
+SHIFT_TYPE_COLORS = {
+    shift_type: SHIFT_COLORS.get(code, (0.5, 0.5, 0.5, 1))
+    for code, (shift_type, *_)
+    in ocr_engine.SHIFT_MAP.items()
+}
+
+
+class PieChart(Widget):
+    """Simple pie chart widget for visualizing shift distributions."""
+
+    def __init__(self, data, color_lookup, **kwargs):
+        super().__init__(**kwargs)
+        self.data = data
+        self.color_lookup = color_lookup
+        self.bind(pos=self._redraw, size=self._redraw)
+        self._redraw()
+
+    def _redraw(self, *_, **__):
+        """Redraw the pie based on current widget size and data."""
+        self.canvas.clear()
+        total = sum(self.data.values())
+        if total <= 0:
+            return
+
+        angle_start = 0
+        with self.canvas:
+            for label, value in self.data.items():
+                span = 360 * (value / total)
+                Color(*self.color_lookup.get(label, (0.5, 0.5, 0.5, 1)))
+                Ellipse(
+                    pos=self.pos,
+                    size=self.size,
+                    angle_start=angle_start,
+                    angle_end=angle_start + span,
+                )
+                angle_start += span
 
 
 # ---------- Home Screen ----------
@@ -37,9 +79,13 @@ class HomeScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        self.font_name = self._get_font()
+
         # Root layout with background color
         # Using BoxLayout with vertical orientation for main content area
-        self.root_layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        self.root_layout = BoxLayout(orientation="vertical", padding=12, spacing=12)
+
+        Window.clearcolor = self._hex_to_rgb(BG_COLOR)
 
         # Set up background color for the root layout
         self.root_layout.canvas.before.clear()
@@ -50,14 +96,7 @@ class HomeScreen(Screen):
             self.root_layout.bind(size=self._update_bg, pos=self._update_bg)
 
         # Upload button - allows users to select an image file
-        self.upload_button = Button(
-            text="Upload Image",
-            background_color=self._hex_to_rgb(BUTTON_COLOR),
-            color=self._hex_to_rgb(TEXT_COLOR),
-            size_hint=(1, 0.3),
-            font_size=24,
-            background_normal='',  # Remove default button style
-        )
+        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
         # Bind button press to open file chooser
         self.upload_button.bind(on_press=self.open_filechooser)
         self.root_layout.add_widget(self.upload_button)
@@ -76,6 +115,47 @@ class HomeScreen(Screen):
         # Convert each pair of hex digits to decimal and normalize to 0-1 range
         return tuple(int(hex_color[i:i + 2], 16) / 255 for i in (0, 2, 4)) + (1,)
 
+    def _get_font(self):
+        """Resolve a Century Gothic font if available, falling back to default."""
+        candidates = [
+            "Century Gothic.ttf",
+            "GOTHIC.TTF",
+            "gothic.ttf",
+            "CenturyGothic.ttf",
+        ]
+        for cand in candidates:
+            path = resource_find(cand)
+            if path:
+                return path
+        return "Roboto"
+
+    def _create_button(self, text, size_hint=(1, None), height=56, font_size=20):
+        """Create a rounded, themed button."""
+        btn = Button(
+            text=text,
+            size_hint=size_hint,
+            height=height,
+            color=self._hex_to_rgb(TEXT_COLOR),
+            background_normal='',
+            background_down='',
+            font_size=font_size,
+            font_name=self.font_name,
+        )
+        btn.background_hex = BUTTON_COLOR
+        btn.bind(size=self._round_button, pos=self._round_button, state=self._on_button_state)
+        return btn
+
+    def _round_button(self, instance, *_):
+        """Apply a rounded rectangle background to a button."""
+        instance.canvas.before.clear()
+        with instance.canvas.before:
+            Color(*self._hex_to_rgb(getattr(instance, "background_hex", BUTTON_COLOR)))
+            RoundedRectangle(size=instance.size, pos=instance.pos, radius=[18, 18, 18, 18])
+
+    def _on_button_state(self, instance, value):
+        instance.background_hex = BUTTON_COLOR_ACTIVE if value == "down" else BUTTON_COLOR
+        self._round_button(instance)
+
     def _update_bg(self, instance, value):
         """Update background rectangle when layout size or position changes"""
         self.bg_rect.size = instance.size
@@ -87,29 +167,26 @@ class HomeScreen(Screen):
         chooser = FileChooserIconView(filters=["*.png", "*.jpg", "*.jpeg", "*.bmp"])
 
         # Create select and cancel buttons
-        select_btn = Button(
-            text="Select", size_hint_y=None, height=40,
-            background_color=self._hex_to_rgb(BUTTON_COLOR),
-            color=self._hex_to_rgb(TEXT_COLOR)
-        )
-        cancel_btn = Button(
-            text="Cancel", size_hint_y=None, height=40,
-            background_color=self._hex_to_rgb(BUTTON_COLOR),
-            color=self._hex_to_rgb(TEXT_COLOR)
-        )
+        select_btn = self._create_button("Select", size_hint=(1, None), height=48)
+        cancel_btn = self._create_button("Cancel", size_hint=(1, None), height=48)
 
         # Create layout for the popup
         layout = BoxLayout(orientation="vertical", padding=10)
         layout.add_widget(chooser)
 
         # Add buttons to a horizontal layout
-        btns = BoxLayout(size_hint_y=None, height=40, spacing=10)
+        btns = BoxLayout(size_hint_y=None, height=60, spacing=10)
         btns.add_widget(select_btn)
         btns.add_widget(cancel_btn)
         layout.add_widget(btns)
 
         # Create and open the popup
-        popup = Popup(title="Select Image", content=layout, size_hint=(0.9, 0.9))
+        popup = Popup(
+            title="Select Image",
+            content=layout,
+            size_hint=(0.9, 0.9),
+            background_color=self._hex_to_rgb(CARD_COLOR),
+        )
 
         def select_file(_):
             """Handle file selection"""
@@ -135,8 +212,13 @@ class HomeScreen(Screen):
         # Show popup with raw OCR output (capped at 2000 characters)
         popup = Popup(
             title="Raw OCR Output",
-            content=Label(text=raw_text[:2000], color=self._hex_to_rgb(TEXT_COLOR)),
-            size_hint=(0.9, 0.9)
+            content=Label(
+                text=raw_text[:2000],
+                color=self._hex_to_rgb(TEXT_COLOR),
+                font_name=self.font_name,
+            ),
+            size_hint=(0.9, 0.9),
+            background_color=self._hex_to_rgb(CARD_COLOR),
         )
         popup.open()
 
@@ -158,29 +240,19 @@ class HomeScreen(Screen):
         self.root_layout.clear_widgets()
 
         # Create calendar view with 7 columns (for days of the week)
-        self.calendar_grid = GridLayout(cols=7, spacing=4, size_hint=(1, 0.8))
+        self.calendar_grid = GridLayout(cols=7, spacing=6, size_hint=(1, 0.8))
         self.populate_calendar(parsed)
         self.root_layout.add_widget(self.calendar_grid)
 
         # Create bottom buttons for additional actions
-        btns = BoxLayout(size_hint=(1, 0.2), spacing=10)
+        btns = BoxLayout(size_hint=(1, 0.2), spacing=12)
 
         # Statistics button
-        self.stats_button = Button(
-            text="View Stats",
-            background_color=self._hex_to_rgb(BUTTON_COLOR),
-            color=self._hex_to_rgb(TEXT_COLOR),
-            background_normal=''
-        )
+        self.stats_button = self._create_button("View Stats")
         self.stats_button.bind(on_press=self.show_stats)
 
         # Back button to upload another image
-        self.back_button = Button(
-            text="Upload Another",
-            background_color=self._hex_to_rgb(BUTTON_COLOR),
-            color=self._hex_to_rgb(TEXT_COLOR),
-            background_normal=''
-        )
+        self.back_button = self._create_button("Upload Another")
         self.back_button.bind(on_press=lambda _: self.reset_ui())
 
         # Add buttons to layout
@@ -196,7 +268,9 @@ class HomeScreen(Screen):
         # Handle case where no data was parsed
         if not parsed or not parsed.get("records"):
             self.calendar_grid.add_widget(Label(
-                text="No shifts parsed", color=self._hex_to_rgb(TEXT_COLOR)
+                text="No shifts parsed",
+                color=self._hex_to_rgb(TEXT_COLOR),
+                font_name=self.font_name,
             ))
             return
 
@@ -222,7 +296,7 @@ class HomeScreen(Screen):
         first_day = datetime.date(year, month, 1)
         start_weekday = first_day.weekday()  # Monday=0, Sunday=6
         for _ in range(start_weekday):
-            self.calendar_grid.add_widget(Label(text="", color=self._hex_to_rgb(TEXT_COLOR)))
+            self.calendar_grid.add_widget(Label(text="", color=self._hex_to_rgb(TEXT_COLOR), font_name=self.font_name))
 
         # Create calendar cells for each day of the month
         for d in range(1, num_days + 1):
@@ -231,15 +305,18 @@ class HomeScreen(Screen):
                 orientation="vertical",
                 size_hint_y=None,
                 height=cell_height,
-                padding=2
+                padding=4,
+                spacing=4,
             )
+            cell_container.bind(size=self._tint_card, pos=self._tint_card)
 
             # Day number label (top section, 30% of cell height)
             day_label = Label(
                 text=str(d),
                 color=self._hex_to_rgb(TEXT_COLOR),
                 size_hint_y=0.3,
-                font_size='14sp'
+                font_size='14sp',
+                font_name=self.font_name,
             )
             cell_container.add_widget(day_label)
 
@@ -247,7 +324,7 @@ class HomeScreen(Screen):
             shifts_container = GridLayout(
                 cols=1,
                 size_hint_y=0.7,
-                spacing=2
+                spacing=3
             )
 
             # Add colored blocks for each shift on this day
@@ -257,7 +334,8 @@ class HomeScreen(Screen):
                     color=(1, 1, 1, 1),  # white text
                     bold=True,
                     size_hint_y=None,
-                    height=cell_height * 0.2  # Each shift takes 20% of cell height
+                    height=cell_height * 0.2,  # Each shift takes 20% of cell height
+                    font_name=self.font_name,
                 )
                 # Draw colored background based on shift type
                 block.bind(size=self._update_bg_rect, pos=self._update_bg_rect)
@@ -277,25 +355,61 @@ class HomeScreen(Screen):
             instance.bg.size = instance.size
             instance.bg.pos = instance.pos
 
+    def _tint_card(self, instance, *_):
+        """Add a subtle rounded card background behind a widget."""
+        instance.canvas.before.clear()
+        with instance.canvas.before:
+            Color(*self._hex_to_rgb(CARD_COLOR))
+            RoundedRectangle(size=instance.size, pos=instance.pos, radius=[12, 12, 12, 12])
+
     def show_stats(self, instance):
         """Show statistics popup with hours worked by shift type"""
         if not self.parsed or not self.parsed.get("records"):
-            content = Label(text="No stats available", color=self._hex_to_rgb(TEXT_COLOR))
+            content = Label(
+                text="No stats available",
+                color=self._hex_to_rgb(TEXT_COLOR),
+                font_name=self.font_name,
+            )
         else:
-            # Calculate total hours by shift type
             counts = {}
             for rec in self.parsed["records"]:
                 counts[rec["shift_type"]] = counts.get(rec["shift_type"], 0) + rec["hours"]
 
-            # Format statistics string
-            stats_str = "Hours worked:\n" + "\n".join([f"{k}: {v}" for k, v in counts.items()])
-            content = Label(text=stats_str, color=self._hex_to_rgb(TEXT_COLOR))
+            content = BoxLayout(orientation="vertical", spacing=12, padding=12)
+            content.bind(size=self._tint_card, pos=self._tint_card)
 
-        # Create and show statistics popup
+            pie = PieChart(counts, SHIFT_TYPE_COLORS, size_hint=(1, 0.65))
+            content.add_widget(pie)
+
+            legend = GridLayout(cols=1, size_hint=(1, 0.35), spacing=8)
+            total_hours = sum(counts.values()) or 1
+            for shift, hours in counts.items():
+                pct = (hours / total_hours) * 100
+                row = BoxLayout(orientation="horizontal", spacing=8)
+
+                swatch = Widget(size_hint=(0.15, 1))
+                swatch.bind(size=self._update_bg_rect, pos=self._update_bg_rect)
+                with swatch.canvas.before:
+                    Color(*SHIFT_TYPE_COLORS.get(shift, (0.5, 0.5, 0.5, 1)))
+                    swatch.bg = Rectangle(size=swatch.size, pos=swatch.pos)
+
+                row.add_widget(swatch)
+                row.add_widget(Label(
+                    text=f"{shift}: {hours:.1f}h ({pct:.0f}%)",
+                    color=self._hex_to_rgb(TEXT_COLOR),
+                    halign="left",
+                    valign="middle",
+                    font_name=self.font_name,
+                ))
+                legend.add_widget(row)
+
+            content.add_widget(legend)
+
         popup = Popup(
             title="Shift Stats",
             content=content,
-            size_hint=(0.7, 0.7)
+            size_hint=(0.75, 0.75),
+            background_color=self._hex_to_rgb(CARD_COLOR),
         )
         popup.open()
 
@@ -304,14 +418,7 @@ class HomeScreen(Screen):
         self.root_layout.clear_widgets()
 
         # Recreate upload button
-        self.upload_button = Button(
-            text="Upload Image",
-            background_color=self._hex_to_rgb(BUTTON_COLOR),
-            color=self._hex_to_rgb(TEXT_COLOR),
-            size_hint=(1, 0.3),
-            font_size=24,
-            background_normal=''
-        )
+        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
         self.upload_button.bind(on_press=self.open_filechooser)
         self.root_layout.add_widget(self.upload_button)
 
