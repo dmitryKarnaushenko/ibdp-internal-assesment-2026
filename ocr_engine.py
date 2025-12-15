@@ -44,28 +44,30 @@ FALLBACK_SAMPLE_PARSED = {
     ],
 }
 
-FALLBACK_SAMPLE_RAW = (
-    "Name (conf=1.00)\n"
-    "1 L (conf=0.87)\n"
-    "2 M (conf=0.93)\n"
-    "3 X (conf=0.95)\n"
-    "4] (conf=0.48)\n"
-    "5 V (conf=0.81)\n"
-    "6 5 (conf=0.93)\n"
-    "7 D (conf=0.77)\n"
-    "LVIRA JIMENET (conf=0.80)\n"
-    "M (conf=1.00)\n"
-    "IOLA MIQUELI (conf=0.71)\n"
-    "N (conf=0.43)\n"
-    "oaarawovl (conf=0.13)\n"
-    "N (conf=0.12)\n"
-    "M (conf=0.74)\n"
-    "M (conf=0.59)\n"
-    " (conf=0.00)\n"
-    " (conf=0.00)\n"
-    " (conf=0.00)\n"
-    '" (conf=0.02)\n'
-    '" (conf=0.07)'
+FALLBACK_SAMPLE_RAW = "\n".join(
+    [
+        "Name (conf=1.00)",
+        "1 L (conf=0.87)",
+        "2 M (conf=0.93)",
+        "3 X (conf=0.95)",
+        "4] (conf=0.48)",
+        "5 V (conf=0.81)",
+        "6 5 (conf=0.93)",
+        "7 D (conf=0.77)",
+        "LVIRA JIMENET (conf=0.80)",
+        "M (conf=1.00)",
+        "IOLA MIQUELI (conf=0.71)",
+        "N (conf=0.43)",
+        "oaarawovl (conf=0.13)",
+        "N (conf=0.12)",
+        "M (conf=0.74)",
+        "M (conf=0.59)",
+        " (conf=0.00)",
+        " (conf=0.00)",
+        " (conf=0.00)",
+        '" (conf=0.02)',
+        '" (conf=0.07)',
+    ]
 )
 
 # Configuration variables
