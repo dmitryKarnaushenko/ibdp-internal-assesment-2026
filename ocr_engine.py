@@ -24,6 +24,50 @@ DEBUG_PATH = os.path.join(OUT_DIR, "parsed_debug.txt")  # Debug information
 SAMPLE_JSON = os.path.join(ASSETS_DIR, "sample_shifts.json")  # Prefab demo data
 SAMPLE_RAW_OCR = os.path.join(ASSETS_DIR, "sample_raw_ocr.txt")  # Prefab OCR text
 
+# Inline fallbacks so prefab mode still works even if assets are missing at runtime
+FALLBACK_SAMPLE_PARSED = {
+    "person": "NINA ARONOVA",
+    "year": 2025,
+    "month": 12,
+    "days": list(range(1, 32)),
+    "records": [
+        {"person": "NINA ARONOVA", "date": "2025-12-02", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-04", "shift_code": "T", "shift_type": "Evening", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-07", "shift_code": "N", "shift_type": "Night", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-10", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-12", "shift_code": "T", "shift_type": "Evening", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-15", "shift_code": "N", "shift_type": "Night", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-18", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-21", "shift_code": "T", "shift_type": "Evening", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-24", "shift_code": "N", "shift_type": "Night", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-28", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+    ],
+}
+
+FALLBACK_SAMPLE_RAW = (
+    "Name (conf=1.00)\n"
+    "1 L (conf=0.87)\n"
+    "2 M (conf=0.93)\n"
+    "3 X (conf=0.95)\n"
+    "4] (conf=0.48)\n"
+    "5 V (conf=0.81)\n"
+    "6 5 (conf=0.93)\n"
+    "7 D (conf=0.77)\n"
+    "LVIRA JIMENET (conf=0.80)\n"
+    "M (conf=1.00)\n"
+    "IOLA MIQUELI (conf=0.71)\n"
+    "N (conf=0.43)\n"
+    "oaarawovl (conf=0.13)\n"
+    "N (conf=0.12)\n"
+    "M (conf=0.74)\n"
+    "M (conf=0.59)\n"
+    " (conf=0.00)\n"
+    " (conf=0.00)\n"
+    " (conf=0.00)\n"
+    '" (conf=0.02)\n'
+    '" (conf=0.07)'
+)
+
 # Configuration variables
 TARGET_NAME = os.environ.get("TARGET_NAME", "NINA ARONOVA")  # Name to look for in schedule
 SHIFT_MAP = {  # Mapping of shift codes to shift details
@@ -144,10 +188,13 @@ def dump_raw_ocr(path):
 
 def load_sample_raw_text():
     """Load the prefab raw OCR text used for demo mode displays."""
-    if not os.path.exists(SAMPLE_RAW_OCR):
-        return ""
-    with open(SAMPLE_RAW_OCR, "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        if os.path.exists(SAMPLE_RAW_OCR):
+            with open(SAMPLE_RAW_OCR, "r", encoding="utf-8") as f:
+                return f.read()
+    except Exception:
+        pass
+    return FALLBACK_SAMPLE_RAW
 
 
 def save_raw_text(text):
@@ -161,11 +208,16 @@ def save_raw_text(text):
 
 
 def load_sample_parsed():
-    """Load prefab parsed shifts for demo mode, returning None if missing."""
-    if not os.path.exists(SAMPLE_JSON):
-        return None
-    with open(SAMPLE_JSON, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """Load prefab parsed shifts for demo mode with a built-in fallback."""
+    try:
+        if os.path.exists(SAMPLE_JSON):
+            with open(SAMPLE_JSON, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
+                if parsed.get("records"):
+                    return parsed
+    except Exception:
+        pass
+    return FALLBACK_SAMPLE_PARSED
 
 
 def parse_schedule(cv_img):
