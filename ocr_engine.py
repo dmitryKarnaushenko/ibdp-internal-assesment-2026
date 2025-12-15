@@ -17,6 +17,8 @@ CSV_PATH = os.path.join(OUT_DIR, "shifts.csv")  # Parsed shifts in CSV format
 JSON_PATH = os.path.join(OUT_DIR, "shifts.json")  # Parsed shifts in JSON format
 XLSX_PATH = os.path.join(OUT_DIR, "shifts.xlsx")  # Parsed shifts in Excel format
 DEBUG_PATH = os.path.join(OUT_DIR, "parsed_debug.txt")  # Debug information
+SAMPLE_JSON = os.path.join("assets", "sample_shifts.json")  # Prefab demo data
+SAMPLE_RAW_OCR = os.path.join("assets", "sample_raw_ocr.txt")  # Prefab OCR text
 
 # Configuration variables
 TARGET_NAME = os.environ.get("TARGET_NAME", "NINA ARONOVA")  # Name to look for in schedule
@@ -136,6 +138,14 @@ def dump_raw_ocr(path):
     return "\n".join(lines)
 
 
+def load_sample_raw_text():
+    """Load the prefab raw OCR text used for demo mode displays."""
+    if not os.path.exists(SAMPLE_RAW_OCR):
+        return ""
+    with open(SAMPLE_RAW_OCR, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 def save_raw_text(text):
     """
     Save the raw OCR text to a file for debugging purposes.
@@ -144,6 +154,14 @@ def save_raw_text(text):
     with open(RAW_PATH, "w", encoding="utf-8") as f:
         f.write(text or "")
     return RAW_PATH
+
+
+def load_sample_parsed():
+    """Load prefab parsed shifts for demo mode, returning None if missing."""
+    if not os.path.exists(SAMPLE_JSON):
+        return None
+    with open(SAMPLE_JSON, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def parse_schedule(cv_img):
@@ -161,7 +179,15 @@ def parse_schedule(cv_img):
     parsed = _bbox_map_parse(cv_img, days)
 
     if parsed is None:
-        raise RuntimeError("Schedule parsing failed")
+        # Return an empty structure instead of raising so the UI can continue
+        # running and surface a helpful status message to the user.
+        return {
+            "person": TARGET_NAME,
+            "year": year,
+            "month": month,
+            "days": days,
+            "records": [],
+        }
 
     return parsed
 
@@ -402,10 +428,24 @@ def process_image(path):
         return raw_text, f"[ERROR] Failed to open image: {e}", None
 
     # Step 3: Parse the schedule
-    parsed = parse_schedule(cv_img)
-
-    # Create status message with parsing results
-    info = f"Status: parsed {len(parsed.get('records', []))} shifts for {parsed.get('person')}"
+    try:
+        parsed = parse_schedule(cv_img)
+        if parsed.get("records"):
+            info = f"Status: parsed {len(parsed.get('records', []))} shifts for {parsed.get('person')}"
+        else:
+            info = (
+                "Status: no shifts parsed. If this is December, double-check the "
+                "name selection and month in the source image."
+            )
+    except Exception as e:
+        parsed = {
+            "person": TARGET_NAME,
+            "year": date.today().year,
+            "month": date.today().month,
+            "days": [],
+            "records": [],
+        }
+        info = f"[ERROR] Schedule parsing failed: {e}"
 
     # Step 4: Save outputs in various formats
     save_outputs(parsed)

@@ -76,8 +76,10 @@ class HomeScreen(Screen):
     """The main screen of the application that allows users to upload images,
     view parsed schedules, and see statistics."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, use_prefab_data=False, **kwargs):
         super().__init__(**kwargs)
+
+        self.use_prefab_data = use_prefab_data
 
         self.font_name = self._get_font()
 
@@ -206,8 +208,16 @@ class HomeScreen(Screen):
 
     def process_image(self, file_path):
         """Process the selected image file through OCR and display results"""
-        # Get raw OCR text from the image
-        raw_text = ocr_engine.dump_raw_ocr(file_path)
+        # Get raw OCR text from the image (or prefab fixture in demo mode)
+        if self.use_prefab_data:
+            raw_text = ocr_engine.load_sample_raw_text()
+            raw_text = (
+                "[Demo mode] Showing prefab raw OCR fixture.\n\n" + raw_text
+                if raw_text
+                else "[Demo mode] No prefab raw OCR fixture available."
+            )
+        else:
+            raw_text = ocr_engine.dump_raw_ocr(file_path)
 
         # Show popup with raw OCR output (capped at 2000 characters)
         popup = Popup(
@@ -223,7 +233,11 @@ class HomeScreen(Screen):
         popup.open()
 
         # Process image to extract structured data
-        _, info, parsed = ocr_engine.process_image(file_path)
+        if self.use_prefab_data:
+            parsed = ocr_engine.load_sample_parsed()
+            info = "Loaded prefab schedule for demo mode."
+        else:
+            _, info, parsed = ocr_engine.process_image(file_path)
         self.ocr_text = info
         self.parsed = parsed
 
@@ -430,7 +444,7 @@ class HomeScreen(Screen):
 class ShiftTrackerRoot(ScreenManager):
     """The root screen manager for the application."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, use_prefab_data=False, **kwargs):
         super().__init__(**kwargs)
         # Add the home screen with identifier "home"
-        self.add_widget(HomeScreen(name="home"))
+        self.add_widget(HomeScreen(name="home", use_prefab_data=use_prefab_data))
