@@ -10,15 +10,19 @@ import cv2  # OpenCV for image processing
 from PIL import Image  # Pillow for image handling
 import easyocr  # EasyOCR for text recognition
 
+# Resolve key paths relative to this module so demo assets load regardless of cwd
+HERE = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(HERE, "assets")
+
 # Output paths for saving parsed data
-OUT_DIR = "userdata"  # Directory where all output files will be stored
+OUT_DIR = os.path.join(HERE, "userdata")  # Directory where all output files will be stored
 RAW_PATH = os.path.join(OUT_DIR, "raw_ocr.txt")  # Raw OCR output text
 CSV_PATH = os.path.join(OUT_DIR, "shifts.csv")  # Parsed shifts in CSV format
 JSON_PATH = os.path.join(OUT_DIR, "shifts.json")  # Parsed shifts in JSON format
 XLSX_PATH = os.path.join(OUT_DIR, "shifts.xlsx")  # Parsed shifts in Excel format
 DEBUG_PATH = os.path.join(OUT_DIR, "parsed_debug.txt")  # Debug information
-SAMPLE_JSON = os.path.join("assets", "sample_shifts.json")  # Prefab demo data
-SAMPLE_RAW_OCR = os.path.join("assets", "sample_raw_ocr.txt")  # Prefab OCR text
+SAMPLE_JSON = os.path.join(ASSETS_DIR, "sample_shifts.json")  # Prefab demo data
+SAMPLE_RAW_OCR = os.path.join(ASSETS_DIR, "sample_raw_ocr.txt")  # Prefab OCR text
 
 # Configuration variables
 TARGET_NAME = os.environ.get("TARGET_NAME", "NINA ARONOVA")  # Name to look for in schedule
