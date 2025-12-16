@@ -19,11 +19,12 @@ import ocr_engine
 os.makedirs("userdata", exist_ok=True)
 
 # Define the application's color scheme using hex values
-BG_COLOR = "#14181D"
-CARD_COLOR = "#1E252D"
-TEXT_COLOR = "#F2F6FB"
-BUTTON_COLOR = "#2D4466"
-BUTTON_COLOR_ACTIVE = "#36598A"
+# Deep navy background with slightly lighter panels and buttons for contrast
+BG_COLOR = "#0A1226"
+CARD_COLOR = "#131D36"
+TEXT_COLOR = "#FFFFFF"
+BUTTON_COLOR = "#2E3F63"
+BUTTON_COLOR_ACTIVE = "#3C5486"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
 SHIFT_COLORS = {
@@ -95,11 +96,8 @@ class HomeScreen(Screen):
             # Bind size and position changes to update the background
             self.root_layout.bind(size=self._update_bg, pos=self._update_bg)
 
-        # Upload button - allows users to select an image file
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
-        # Bind button press to open file chooser
-        self.upload_button.bind(on_press=self.open_filechooser)
-        self.root_layout.add_widget(self.upload_button)
+        # Build the initial home view
+        self._build_home_content()
 
         # Add the root layout to the screen
         self.add_widget(self.root_layout)
@@ -129,6 +127,15 @@ class HomeScreen(Screen):
                 return path
         return "Roboto"
 
+    def _create_label(self, text, **kwargs):
+        """Create a consistently styled label for the app."""
+        return Label(
+            text=text,
+            color=self._hex_to_rgb(TEXT_COLOR),
+            font_name=self.font_name,
+            **kwargs,
+        )
+
     def _create_button(self, text, size_hint=(1, None), height=56, font_size=20):
         """Create a rounded, themed button."""
         btn = Button(
@@ -144,6 +151,40 @@ class HomeScreen(Screen):
         btn.background_hex = BUTTON_COLOR
         btn.bind(size=self._round_button, pos=self._round_button, state=self._on_button_state)
         return btn
+
+    def _build_home_content(self):
+        """Lay out the landing view with a headline and a compact main action button."""
+        self.root_layout.clear_widgets()
+
+        hero = self._create_label(
+            "Shift Tracker",
+            font_size="26sp",
+            bold=True,
+            size_hint=(1, 0.18),
+            halign="center",
+            valign="middle",
+        )
+        hero.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
+
+        subtext = self._create_label(
+            "Upload your schedule or use the premade JSON to explore the UI.",
+            font_size="16sp",
+            size_hint=(1, 0.22),
+            halign="center",
+            valign="middle",
+        )
+        subtext.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
+
+        self.upload_button = self._create_button("Main Menu", size_hint=(1, 0.16), font_size=22)
+        self.upload_button.bind(on_press=self.open_filechooser)
+
+        # Pack the header and button with breathing room
+        header = BoxLayout(orientation="vertical", spacing=10, size_hint=(1, 0.56))
+        header.add_widget(hero)
+        header.add_widget(subtext)
+        header.add_widget(self.upload_button)
+
+        self.root_layout.add_widget(header)
 
     def _round_button(self, instance, *_):
         """Apply a rounded rectangle background to a button."""
@@ -415,12 +456,7 @@ class HomeScreen(Screen):
 
     def reset_ui(self):
         """Reset UI to initial state for uploading a new image"""
-        self.root_layout.clear_widgets()
-
-        # Recreate upload button
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
-        self.upload_button.bind(on_press=self.open_filechooser)
-        self.root_layout.add_widget(self.upload_button)
+        self._build_home_content()
 
         # Reset parsed data
         self.parsed = None
