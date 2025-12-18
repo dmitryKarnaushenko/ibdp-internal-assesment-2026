@@ -1,8 +1,6 @@
 import os
 import datetime
 import calendar
-import random
-import threading
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
@@ -14,8 +12,6 @@ from kivy.graphics import Color, Rectangle, Ellipse, RoundedRectangle
 from kivy.uix.widget import Widget
 from kivy.core.window import Window  # Moved to top level import
 from kivy.resources import resource_find
-from kivy.clock import Clock
-from kivy.uix.progressbar import ProgressBar
 
 import ocr_engine
 
@@ -272,6 +268,11 @@ class HomeScreen(Screen):
         self.back_button = self._create_button("Upload Another")
         self.back_button.bind(on_press=lambda _: self.reset_ui())
 
+        # Add buttons to layout
+        btns.add_widget(self.stats_button)
+        btns.add_widget(self.back_button)
+        self.root_layout.add_widget(btns)
+
     def populate_calendar(self, parsed):
         """Populate the calendar view with parsed shift data"""
         # Clear any existing widgets
@@ -459,3 +460,5 @@ class ShiftTrackerRoot(ScreenManager):
         super().__init__(**kwargs)
         # Add the home screen with identifier "home"
         self.add_widget(HomeScreen(name="home", use_prefab_data=use_prefab_data))
+
+
