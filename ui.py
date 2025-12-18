@@ -19,11 +19,12 @@ import ocr_engine
 os.makedirs("userdata", exist_ok=True)
 
 # Define the application's color scheme using hex values
-BG_COLOR = "#14181D"
-CARD_COLOR = "#1E252D"
-TEXT_COLOR = "#F2F6FB"
-BUTTON_COLOR = "#2D4466"
-BUTTON_COLOR_ACTIVE = "#36598A"
+# Dark navy-inspired canvas with lighter blue-grey controls and white text
+BG_COLOR = "#0B192F"
+CARD_COLOR = "#132643"
+TEXT_COLOR = "#FFFFFF"
+BUTTON_COLOR = "#3E5C88"
+BUTTON_COLOR_ACTIVE = "#4F709F"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
 SHIFT_COLORS = {
