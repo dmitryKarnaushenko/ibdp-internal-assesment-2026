@@ -19,11 +19,12 @@ import ocr_engine
 os.makedirs("userdata", exist_ok=True)
 
 # Define the application's color scheme using hex values
-BG_COLOR = "#14181D"
-CARD_COLOR = "#1E252D"
-TEXT_COLOR = "#F2F6FB"
-BUTTON_COLOR = "#2D4466"
-BUTTON_COLOR_ACTIVE = "#36598A"
+# Dark navy-inspired canvas with lighter blue-grey controls and white text
+BG_COLOR = "#0B192F"
+CARD_COLOR = "#132643"
+TEXT_COLOR = "#FFFFFF"
+BUTTON_COLOR = "#3E5C88"
+BUTTON_COLOR_ACTIVE = "#4F709F"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
 SHIFT_COLORS = {
@@ -76,8 +77,10 @@ class HomeScreen(Screen):
     """The main screen of the application that allows users to upload images,
     view parsed schedules, and see statistics."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, use_prefab_data=False, **kwargs):
         super().__init__(**kwargs)
+
+        self.use_prefab_data = use_prefab_data
 
         self.font_name = self._get_font()
 
@@ -95,8 +98,19 @@ class HomeScreen(Screen):
             # Bind size and position changes to update the background
             self.root_layout.bind(size=self._update_bg, pos=self._update_bg)
 
+        # App title
+        self.title_label = Label(
+            text="Shift Tracker",
+            color=self._hex_to_rgb(TEXT_COLOR),
+            font_size="32sp",
+            size_hint=(1, 0.18),
+            bold=True,
+            font_name=self.font_name,
+        )
+        self.root_layout.add_widget(self.title_label)
+
         # Upload button - allows users to select an image file
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
+        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
         # Bind button press to open file chooser
         self.upload_button.bind(on_press=self.open_filechooser)
         self.root_layout.add_widget(self.upload_button)
@@ -136,6 +150,7 @@ class HomeScreen(Screen):
             size_hint=size_hint,
             height=height,
             color=self._hex_to_rgb(TEXT_COLOR),
+            background_color=(0, 0, 0, 0),
             background_normal='',
             background_down='',
             font_size=font_size,
@@ -143,6 +158,7 @@ class HomeScreen(Screen):
         )
         btn.background_hex = BUTTON_COLOR
         btn.bind(size=self._round_button, pos=self._round_button, state=self._on_button_state)
+        self._round_button(btn)
         return btn
 
     def _round_button(self, instance, *_):
@@ -206,24 +222,16 @@ class HomeScreen(Screen):
 
     def process_image(self, file_path):
         """Process the selected image file through OCR and display results"""
-        # Get raw OCR text from the image
-        raw_text = ocr_engine.dump_raw_ocr(file_path)
-
-        # Show popup with raw OCR output (capped at 2000 characters)
-        popup = Popup(
-            title="Raw OCR Output",
-            content=Label(
-                text=raw_text[:2000],
-                color=self._hex_to_rgb(TEXT_COLOR),
-                font_name=self.font_name,
-            ),
-            size_hint=(0.9, 0.9),
-            background_color=self._hex_to_rgb(CARD_COLOR),
-        )
-        popup.open()
-
         # Process image to extract structured data
-        _, info, parsed = ocr_engine.process_image(file_path)
+        if self.use_prefab_data:
+            parsed = ocr_engine.load_sample_parsed()
+            if not parsed.get("records"):
+                parsed = ocr_engine.FALLBACK_SAMPLE_PARSED
+                info = "Loaded built-in prefab schedule (asset unavailable)."
+            else:
+                info = "Loaded prefab schedule for demo mode."
+        else:
+            _, info, parsed = ocr_engine.process_image(file_path)
         self.ocr_text = info
         self.parsed = parsed
 
@@ -378,11 +386,23 @@ class HomeScreen(Screen):
             content = BoxLayout(orientation="vertical", spacing=12, padding=12)
             content.bind(size=self._tint_card, pos=self._tint_card)
 
-            pie = PieChart(counts, SHIFT_TYPE_COLORS, size_hint=(1, 0.65))
+            total_hours = sum(counts.values())
+            total_shifts = len(self.parsed["records"])
+            summary = Label(
+                text=f"Total hours: {total_hours:.1f}\nTotal shifts: {total_shifts}",
+                color=self._hex_to_rgb(TEXT_COLOR),
+                font_size="18sp",
+                halign="center",
+                valign="middle",
+                font_name=self.font_name,
+            )
+            content.add_widget(summary)
+
+            pie = PieChart(counts, SHIFT_TYPE_COLORS, size_hint=(1, 0.6))
             content.add_widget(pie)
 
-            legend = GridLayout(cols=1, size_hint=(1, 0.35), spacing=8)
-            total_hours = sum(counts.values()) or 1
+            legend = GridLayout(cols=1, size_hint=(1, 0.4), spacing=8)
+            total_hours = total_hours or 1
             for shift, hours in counts.items():
                 pct = (hours / total_hours) * 100
                 row = BoxLayout(orientation="horizontal", spacing=8)
@@ -418,8 +438,9 @@ class HomeScreen(Screen):
         self.root_layout.clear_widgets()
 
         # Recreate upload button
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
+        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
         self.upload_button.bind(on_press=self.open_filechooser)
+        self.root_layout.add_widget(self.title_label)
         self.root_layout.add_widget(self.upload_button)
 
         # Reset parsed data
@@ -430,7 +451,7 @@ class HomeScreen(Screen):
 class ShiftTrackerRoot(ScreenManager):
     """The root screen manager for the application."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, use_prefab_data=False, **kwargs):
         super().__init__(**kwargs)
         # Add the home screen with identifier "home"
-        self.add_widget(HomeScreen(name="home"))
+        self.add_widget(HomeScreen(name="home", use_prefab_data=use_prefab_data))
