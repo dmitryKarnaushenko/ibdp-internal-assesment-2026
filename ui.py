@@ -126,9 +126,6 @@ class HomeScreen(Screen):
         self.ocr_text = ""  # Raw OCR output text
         self.parsed = None  # Parsed schedule data
         self.calendar_grid = None
-        self.loading_bar = None
-        self._loading_event = None
-        self._processing_result = None
 
     def _hex_to_rgb(self, hex_color):
         """Convert hex color string to kivy RGBA tuple (0-1 range)"""
@@ -229,89 +226,18 @@ class HomeScreen(Screen):
 
     def process_image(self, file_path):
         """Process the selected image file through OCR and display results"""
-        # Show loading screen with steady progress over a random duration
-        duration = random.uniform(12, 15)
-        self._show_loading(duration)
-
-        # Clear prior result holder and kick off background processing
-        self._processing_result = None
-
-        def worker():
-            if self.use_prefab_data:
-                parsed = ocr_engine.load_sample_parsed()
-                if not parsed.get("records"):
-                    parsed = ocr_engine.FALLBACK_SAMPLE_PARSED
-                    info = "Loaded built-in prefab schedule (asset unavailable)."
-                else:
-                    info = "Loaded prefab schedule for demo mode."
+        # Process image to extract structured data
+        if self.use_prefab_data:
+            parsed = ocr_engine.load_sample_parsed()
+            if not parsed.get("records"):
+                parsed = ocr_engine.FALLBACK_SAMPLE_PARSED
+                info = "Loaded built-in prefab schedule (asset unavailable)."
             else:
-                _, info, parsed = ocr_engine.process_image(file_path)
-            self._processing_result = (parsed, info)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-        # After the loading duration, display results (or wait until ready)
-        Clock.schedule_once(lambda *_: self._complete_loading(duration), duration)
-
-    def _show_loading(self, duration):
-        """Display a progress bar that advances steadily for the given duration."""
-        # Cancel any prior loading animation
-        if self._loading_event:
-            self._loading_event.cancel()
-
-        self.root_layout.clear_widgets()
-        self.root_layout.add_widget(self.title_label)
-
-        holder = BoxLayout(orientation="vertical", spacing=12, padding=12)
-        holder.bind(size=self._tint_card, pos=self._tint_card)
-
-        label = Label(
-            text="Processing...",
-            color=self._hex_to_rgb(TEXT_COLOR),
-            font_size="20sp",
-            size_hint=(1, 0.2),
-            font_name=self.font_name,
-        )
-        holder.add_widget(label)
-
-        self.loading_bar = ProgressBar(max=duration, value=0, size_hint=(1, 0.1))
-        holder.add_widget(self.loading_bar)
-
-        self.root_layout.add_widget(holder)
-
-        self._loading_elapsed = 0
-        self._loading_duration = duration
-
-        def advance(dt):
-            self._loading_elapsed += dt
-            if self.loading_bar:
-                self.loading_bar.value = min(self._loading_elapsed, self._loading_duration)
-            if self._loading_elapsed >= self._loading_duration:
-                return False
-            return True
-
-        self._loading_event = Clock.schedule_interval(advance, 0)
-
-    def _complete_loading(self, duration, *_):
-        """Finish loading screen once both timer and parsing are ready."""
-        if self._loading_event:
-            self._loading_event.cancel()
-            self._loading_event = None
-        if self.loading_bar:
-            self.loading_bar.value = duration
-
-        if self._processing_result is None:
-            # Wait a moment for the worker to finish
-            Clock.schedule_once(lambda *_: self._complete_loading(duration), 0.25)
-            return
-
-        parsed, info = self._processing_result
-        self._processing_result = None
-
-        self._render_results(parsed, info)
-
-    def _render_results(self, parsed, info):
-        """Render calendar/stat UI for parsed results."""
+                info = "Loaded prefab schedule for demo mode."
+        else:
+            _, info, parsed = ocr_engine.process_image(file_path)
+        self.ocr_text = info
+        self.parsed = parsed
         self.ocr_text = info
         self.parsed = parsed
 
@@ -345,11 +271,6 @@ class HomeScreen(Screen):
         # Back button to upload another image
         self.back_button = self._create_button("Upload Another")
         self.back_button.bind(on_press=lambda _: self.reset_ui())
-
-        # Add buttons to layout
-        btns.add_widget(self.stats_button)
-        btns.add_widget(self.back_button)
-        self.root_layout.add_widget(btns)
 
     def populate_calendar(self, parsed):
         """Populate the calendar view with parsed shift data"""
@@ -518,12 +439,6 @@ class HomeScreen(Screen):
 
     def reset_ui(self):
         """Reset UI to initial state for uploading a new image"""
-        if self._loading_event:
-            self._loading_event.cancel()
-            self._loading_event = None
-        self._processing_result = None
-        self.loading_bar = None
-
         self.root_layout.clear_widgets()
 
         # Recreate upload button
