@@ -98,8 +98,19 @@ class HomeScreen(Screen):
             # Bind size and position changes to update the background
             self.root_layout.bind(size=self._update_bg, pos=self._update_bg)
 
+        # App title
+        self.title_label = Label(
+            text="Shift Tracker",
+            color=self._hex_to_rgb(TEXT_COLOR),
+            font_size="32sp",
+            size_hint=(1, 0.18),
+            bold=True,
+            font_name=self.font_name,
+        )
+        self.root_layout.add_widget(self.title_label)
+
         # Upload button - allows users to select an image file
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
+        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
         # Bind button press to open file chooser
         self.upload_button.bind(on_press=self.open_filechooser)
         self.root_layout.add_widget(self.upload_button)
@@ -139,6 +150,7 @@ class HomeScreen(Screen):
             size_hint=size_hint,
             height=height,
             color=self._hex_to_rgb(TEXT_COLOR),
+            background_color=(0, 0, 0, 0),
             background_normal='',
             background_down='',
             font_size=font_size,
@@ -146,6 +158,7 @@ class HomeScreen(Screen):
         )
         btn.background_hex = BUTTON_COLOR
         btn.bind(size=self._round_button, pos=self._round_button, state=self._on_button_state)
+        self._round_button(btn)
         return btn
 
     def _round_button(self, instance, *_):
@@ -209,30 +222,6 @@ class HomeScreen(Screen):
 
     def process_image(self, file_path):
         """Process the selected image file through OCR and display results"""
-        # Get raw OCR text from the image (or prefab fixture in demo mode)
-        if self.use_prefab_data:
-            raw_text = ocr_engine.load_sample_raw_text()
-            raw_text = (
-                "[Demo mode] Showing prefab raw OCR fixture.\n\n" + raw_text
-                if raw_text
-                else "[Demo mode] No prefab raw OCR fixture available."
-            )
-        else:
-            raw_text = ocr_engine.dump_raw_ocr(file_path)
-
-        # Show popup with raw OCR output (capped at 2000 characters)
-        popup = Popup(
-            title="Raw OCR Output",
-            content=Label(
-                text=raw_text[:2000],
-                color=self._hex_to_rgb(TEXT_COLOR),
-                font_name=self.font_name,
-            ),
-            size_hint=(0.9, 0.9),
-            background_color=self._hex_to_rgb(CARD_COLOR),
-        )
-        popup.open()
-
         # Process image to extract structured data
         if self.use_prefab_data:
             parsed = ocr_engine.load_sample_parsed()
@@ -243,6 +232,8 @@ class HomeScreen(Screen):
                 info = "Loaded prefab schedule for demo mode."
         else:
             _, info, parsed = ocr_engine.process_image(file_path)
+        self.ocr_text = info
+        self.parsed = parsed
         self.ocr_text = info
         self.parsed = parsed
 
@@ -258,13 +249,16 @@ class HomeScreen(Screen):
         # Reset layout to prepare for displaying parsed data
         self.root_layout.clear_widgets()
 
+        # Re-add title above results
+        self.root_layout.add_widget(self.title_label)
+
         # Create calendar view with 7 columns (for days of the week)
-        self.calendar_grid = GridLayout(cols=7, spacing=6, size_hint=(1, 0.8))
+        self.calendar_grid = GridLayout(cols=7, spacing=6, size_hint=(1, 0.7))
         self.populate_calendar(parsed)
         self.root_layout.add_widget(self.calendar_grid)
 
         # Create bottom buttons for additional actions
-        btns = BoxLayout(size_hint=(1, 0.2), spacing=12)
+        btns = BoxLayout(size_hint=(1, 0.18), spacing=12)
 
         # Statistics button
         self.stats_button = self._create_button("View Stats")
@@ -397,11 +391,23 @@ class HomeScreen(Screen):
             content = BoxLayout(orientation="vertical", spacing=12, padding=12)
             content.bind(size=self._tint_card, pos=self._tint_card)
 
-            pie = PieChart(counts, SHIFT_TYPE_COLORS, size_hint=(1, 0.65))
+            total_hours = sum(counts.values())
+            total_shifts = len(self.parsed["records"])
+            summary = Label(
+                text=f"Total hours: {total_hours:.1f}\nTotal shifts: {total_shifts}",
+                color=self._hex_to_rgb(TEXT_COLOR),
+                font_size="18sp",
+                halign="center",
+                valign="middle",
+                font_name=self.font_name,
+            )
+            content.add_widget(summary)
+
+            pie = PieChart(counts, SHIFT_TYPE_COLORS, size_hint=(1, 0.6))
             content.add_widget(pie)
 
-            legend = GridLayout(cols=1, size_hint=(1, 0.35), spacing=8)
-            total_hours = sum(counts.values()) or 1
+            legend = GridLayout(cols=1, size_hint=(1, 0.4), spacing=8)
+            total_hours = total_hours or 1
             for shift, hours in counts.items():
                 pct = (hours / total_hours) * 100
                 row = BoxLayout(orientation="horizontal", spacing=8)
@@ -437,8 +443,9 @@ class HomeScreen(Screen):
         self.root_layout.clear_widgets()
 
         # Recreate upload button
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.28), font_size=24)
+        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
         self.upload_button.bind(on_press=self.open_filechooser)
+        self.root_layout.add_widget(self.title_label)
         self.root_layout.add_widget(self.upload_button)
 
         # Reset parsed data
