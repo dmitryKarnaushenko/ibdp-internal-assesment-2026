@@ -234,6 +234,8 @@ class HomeScreen(Screen):
             _, info, parsed = ocr_engine.process_image(file_path)
         self.ocr_text = info
         self.parsed = parsed
+        self.ocr_text = info
+        self.parsed = parsed
 
         # Save structured outputs if parsing was successful
         if parsed is not None:
