@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import copy
 from datetime import datetime, date, timedelta
 import numpy as np
 import pandas as pd
@@ -10,13 +11,65 @@ import cv2  # OpenCV for image processing
 from PIL import Image  # Pillow for image handling
 import easyocr  # EasyOCR for text recognition
 
+# Resolve key paths relative to this module so demo assets load regardless of cwd
+HERE = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(HERE, "assets")
+
 # Output paths for saving parsed data
-OUT_DIR = "userdata"  # Directory where all output files will be stored
+OUT_DIR = os.path.join(HERE, "userdata")  # Directory where all output files will be stored
 RAW_PATH = os.path.join(OUT_DIR, "raw_ocr.txt")  # Raw OCR output text
 CSV_PATH = os.path.join(OUT_DIR, "shifts.csv")  # Parsed shifts in CSV format
 JSON_PATH = os.path.join(OUT_DIR, "shifts.json")  # Parsed shifts in JSON format
 XLSX_PATH = os.path.join(OUT_DIR, "shifts.xlsx")  # Parsed shifts in Excel format
 DEBUG_PATH = os.path.join(OUT_DIR, "parsed_debug.txt")  # Debug information
+SAMPLE_JSON = os.path.join(ASSETS_DIR, "sample_shifts.json")  # Prefab demo data
+SAMPLE_RAW_OCR = os.path.join(ASSETS_DIR, "sample_raw_ocr.txt")  # Prefab OCR text
+
+# Inline fallbacks so prefab mode still works even if assets are missing at runtime
+FALLBACK_SAMPLE_PARSED = {
+    "person": "NINA ARONOVA",
+    "year": 2025,
+    "month": 12,
+    "days": list(range(1, 32)),
+    "records": [
+        {"person": "NINA ARONOVA", "date": "2025-12-02", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-04", "shift_code": "T", "shift_type": "Evening", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-07", "shift_code": "N", "shift_type": "Night", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-10", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-12", "shift_code": "T", "shift_type": "Evening", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-15", "shift_code": "N", "shift_type": "Night", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-18", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-21", "shift_code": "T", "shift_type": "Evening", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-24", "shift_code": "N", "shift_type": "Night", "hours": 8},
+        {"person": "NINA ARONOVA", "date": "2025-12-28", "shift_code": "M", "shift_type": "Morning", "hours": 8},
+    ],
+}
+
+FALLBACK_SAMPLE_RAW = "\n".join(
+    [
+        "Name (conf=1.00)",
+        "1 L (conf=0.87)",
+        "2 M (conf=0.93)",
+        "3 X (conf=0.95)",
+        "4] (conf=0.48)",
+        "5 V (conf=0.81)",
+        "6 5 (conf=0.93)",
+        "7 D (conf=0.77)",
+        "LVIRA JIMENET (conf=0.80)",
+        "M (conf=1.00)",
+        "IOLA MIQUELI (conf=0.71)",
+        "N (conf=0.43)",
+        "oaarawovl (conf=0.13)",
+        "N (conf=0.12)",
+        "M (conf=0.74)",
+        "M (conf=0.59)",
+        " (conf=0.00)",
+        " (conf=0.00)",
+        " (conf=0.00)",
+        '" (conf=0.02)',
+        '" (conf=0.07)',
+    ]
+)
 
 # Configuration variables
 TARGET_NAME = os.environ.get("TARGET_NAME", "NINA ARONOVA")  # Name to look for in schedule
@@ -136,6 +189,17 @@ def dump_raw_ocr(path):
     return "\n".join(lines)
 
 
+def load_sample_raw_text():
+    """Load the prefab raw OCR text used for demo mode displays."""
+    try:
+        if os.path.exists(SAMPLE_RAW_OCR):
+            with open(SAMPLE_RAW_OCR, "r", encoding="utf-8") as f:
+                return f.read()
+    except Exception:
+        pass
+    return FALLBACK_SAMPLE_RAW
+
+
 def save_raw_text(text):
     """
     Save the raw OCR text to a file for debugging purposes.
@@ -144,6 +208,21 @@ def save_raw_text(text):
     with open(RAW_PATH, "w", encoding="utf-8") as f:
         f.write(text or "")
     return RAW_PATH
+
+
+def load_sample_parsed():
+    """Load prefab parsed shifts for demo mode with a built-in fallback."""
+    try:
+        if os.path.exists(SAMPLE_JSON):
+            with open(SAMPLE_JSON, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
+                if parsed.get("records"):
+                    return parsed
+    except Exception:
+        pass
+
+    # Return a defensive copy so callers can't mutate the shared fallback
+    return copy.deepcopy(FALLBACK_SAMPLE_PARSED)
 
 
 def parse_schedule(cv_img):
@@ -161,7 +240,15 @@ def parse_schedule(cv_img):
     parsed = _bbox_map_parse(cv_img, days)
 
     if parsed is None:
-        raise RuntimeError("Schedule parsing failed")
+        # Return an empty structure instead of raising so the UI can continue
+        # running and surface a helpful status message to the user.
+        return {
+            "person": TARGET_NAME,
+            "year": year,
+            "month": month,
+            "days": days,
+            "records": [],
+        }
 
     return parsed
 
@@ -402,10 +489,24 @@ def process_image(path):
         return raw_text, f"[ERROR] Failed to open image: {e}", None
 
     # Step 3: Parse the schedule
-    parsed = parse_schedule(cv_img)
-
-    # Create status message with parsing results
-    info = f"Status: parsed {len(parsed.get('records', []))} shifts for {parsed.get('person')}"
+    try:
+        parsed = parse_schedule(cv_img)
+        if parsed.get("records"):
+            info = f"Status: parsed {len(parsed.get('records', []))} shifts for {parsed.get('person')}"
+        else:
+            info = (
+                "Status: no shifts parsed. If this is December, double-check the "
+                "name selection and month in the source image."
+            )
+    except Exception as e:
+        parsed = {
+            "person": TARGET_NAME,
+            "year": date.today().year,
+            "month": date.today().month,
+            "days": [],
+            "records": [],
+        }
+        info = f"[ERROR] Schedule parsing failed: {e}"
 
     # Step 4: Save outputs in various formats
     save_outputs(parsed)
