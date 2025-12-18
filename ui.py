@@ -247,13 +247,16 @@ class HomeScreen(Screen):
         # Reset layout to prepare for displaying parsed data
         self.root_layout.clear_widgets()
 
+        # Re-add title above results
+        self.root_layout.add_widget(self.title_label)
+
         # Create calendar view with 7 columns (for days of the week)
-        self.calendar_grid = GridLayout(cols=7, spacing=6, size_hint=(1, 0.8))
+        self.calendar_grid = GridLayout(cols=7, spacing=6, size_hint=(1, 0.7))
         self.populate_calendar(parsed)
         self.root_layout.add_widget(self.calendar_grid)
 
         # Create bottom buttons for additional actions
-        btns = BoxLayout(size_hint=(1, 0.2), spacing=12)
+        btns = BoxLayout(size_hint=(1, 0.18), spacing=12)
 
         # Statistics button
         self.stats_button = self._create_button("View Stats")
