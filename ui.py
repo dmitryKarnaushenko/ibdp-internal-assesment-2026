@@ -1,12 +1,17 @@
 import os
+import json
 import datetime
 import calendar
+import time
+from threading import Thread
+from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserIconView
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.progressbar import ProgressBar
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.graphics import Color, Rectangle, Ellipse, RoundedRectangle
 from kivy.uix.widget import Widget
@@ -84,6 +89,12 @@ class HomeScreen(Screen):
 
         self.font_name = self._get_font()
 
+        self.loading_event = None
+        self.loading_start_time = None
+        self.loading_duration = 12  # seconds
+        self.progress_bar = None
+        self.notification_events = []
+
         # Root layout with background color
         # Using BoxLayout with vertical orientation for main content area
         self.root_layout = BoxLayout(orientation="vertical", padding=12, spacing=12)
@@ -109,12 +120,6 @@ class HomeScreen(Screen):
         )
         self.root_layout.add_widget(self.title_label)
 
-        # Upload button - allows users to select an image file
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
-        # Bind button press to open file chooser
-        self.upload_button.bind(on_press=self.open_filechooser)
-        self.root_layout.add_widget(self.upload_button)
-
         # Add the root layout to the screen
         self.add_widget(self.root_layout)
 
@@ -122,6 +127,9 @@ class HomeScreen(Screen):
         self.ocr_text = ""  # Raw OCR output text
         self.parsed = None  # Parsed schedule data
         self.calendar_grid = None
+
+        # Build the start screen so users can view saved data or upload new shifts
+        self._build_start_screen()
 
     def _hex_to_rgb(self, hex_color):
         """Convert hex color string to kivy RGBA tuple (0-1 range)"""
@@ -177,6 +185,78 @@ class HomeScreen(Screen):
         self.bg_rect.size = instance.size
         self.bg_rect.pos = instance.pos
 
+    def _has_saved_data(self):
+        """Return True if persisted shift data exists on disk."""
+        return os.path.exists(ocr_engine.JSON_PATH)
+
+    def _load_saved_data(self):
+        """Load saved parsed shifts if available."""
+        if not self._has_saved_data():
+            return None, "No saved shifts found"
+
+        try:
+            with open(ocr_engine.JSON_PATH, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
+            return parsed, "Loaded saved shifts"
+        except Exception as exc:
+            return None, f"[ERROR] Failed to load saved shifts: {exc}"
+
+    def _show_saved_or_prefab_data(self, *_):
+        """Display persisted data, or prefab demo data when enabled."""
+        if self.use_prefab_data and not self._has_saved_data():
+            parsed = ocr_engine.load_sample_parsed()
+            info = "Loaded prefab schedule for demo mode."
+        else:
+            parsed, info = self._load_saved_data()
+
+        if not parsed or not parsed.get("records"):
+            self._show_info_popup("No saved shifts available. Upload a new schedule to begin.")
+            return
+
+        self._display_results(info, parsed)
+
+    def _show_info_popup(self, message):
+        content = BoxLayout(orientation="vertical", padding=12, spacing=12)
+        content.bind(size=self._tint_card, pos=self._tint_card)
+        content.add_widget(Label(
+            text=message,
+            color=self._hex_to_rgb(TEXT_COLOR),
+            halign="center",
+            valign="middle",
+            font_name=self.font_name,
+            text_size=(Window.width * 0.6, None),
+        ))
+        close_btn = self._create_button("Close", size_hint=(1, None), height=48)
+        content.add_widget(close_btn)
+        popup = Popup(
+            title="Info",
+            content=content,
+            size_hint=(0.75, 0.4),
+            background_color=self._hex_to_rgb(CARD_COLOR),
+        )
+        close_btn.bind(on_press=lambda *_: popup.dismiss())
+        popup.open()
+
+    def _build_start_screen(self):
+        """Construct the landing view with options to view saved shifts or upload new ones."""
+        self.root_layout.clear_widgets()
+        self.root_layout.add_widget(self.title_label)
+
+        # Action buttons
+        self.view_saved_button = self._create_button("View Shifts", size_hint=(1, 0.18), font_size=24)
+        self.view_saved_button.bind(on_press=self._show_saved_or_prefab_data)
+
+        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
+        self.upload_button.bind(on_press=self.open_filechooser)
+
+        actions = BoxLayout(orientation="vertical", spacing=12, size_hint=(1, 0.4))
+        actions.add_widget(self.view_saved_button)
+        actions.add_widget(self.upload_button)
+        self.root_layout.add_widget(actions)
+
+        # Enable viewing saved shifts only when data exists (or always in prefab mode)
+        self.view_saved_button.disabled = not (self.use_prefab_data or self._has_saved_data())
+
     def open_filechooser(self, instance):
         """Open a file chooser dialog to select an image file"""
         # Create file chooser with image filters
@@ -222,7 +302,15 @@ class HomeScreen(Screen):
 
     def process_image(self, file_path):
         """Process the selected image file through OCR and display results"""
-        # Process image to extract structured data
+        self._show_loading_state()
+
+        self.loading_start_time = time.time()
+        self.loading_event = Clock.schedule_interval(self._update_loading_progress, 0.1)
+
+        Thread(target=self._process_image_background, args=(file_path,), daemon=True).start()
+
+    def _process_image_background(self, file_path):
+        """Handle OCR processing in a background thread and delay UI update for loading."""
         if self.use_prefab_data:
             parsed = ocr_engine.load_sample_parsed()
             if not parsed.get("records"):
@@ -232,14 +320,81 @@ class HomeScreen(Screen):
                 info = "Loaded prefab schedule for demo mode."
         else:
             _, info, parsed = ocr_engine.process_image(file_path)
-        self.ocr_text = info
-        self.parsed = parsed
+
+        elapsed = time.time() - self.loading_start_time
+        remaining = max(0, self.loading_duration - elapsed)
+        if remaining:
+            time.sleep(remaining)
+
+        Clock.schedule_once(lambda dt: self._display_results(info, parsed), 0)
+
+    def _show_loading_state(self):
+        """Display a loading bar with a blank calendar beneath while processing."""
+        self._clear_notifications()
+        self.root_layout.clear_widgets()
+        self.root_layout.add_widget(self.title_label)
+
+        self.calendar_grid = GridLayout(cols=7, spacing=6, size_hint=(1, 0.7))
+        self._populate_blank_calendar()
+        self.root_layout.add_widget(self.calendar_grid)
+
+        loader = BoxLayout(orientation="vertical", size_hint=(1, 0.2), spacing=8)
+        loader.bind(size=self._tint_card, pos=self._tint_card)
+
+        loader.add_widget(Label(
+            text="Uploading image...",
+            color=self._hex_to_rgb(TEXT_COLOR),
+            font_size="18sp",
+            halign="center",
+            font_name=self.font_name,
+        ))
+
+        self.progress_bar = ProgressBar(max=100, value=0, size_hint=(1, None), height=24)
+        loader.add_widget(self.progress_bar)
+        self.root_layout.add_widget(loader)
+
+    def _populate_blank_calendar(self):
+        """Create a blank calendar grid while uploads are in progress."""
+        placeholder_cells = 42  # 6 weeks x 7 days grid
+        cell_height = Window.height * 0.1
+        for _ in range(placeholder_cells):
+            cell_container = BoxLayout(
+                orientation="vertical",
+                size_hint_y=None,
+                height=cell_height,
+                padding=4,
+                spacing=4,
+            )
+            cell_container.bind(size=self._tint_card, pos=self._tint_card)
+            cell_container.add_widget(Label(text="", color=self._hex_to_rgb(TEXT_COLOR), font_name=self.font_name))
+            self.calendar_grid.add_widget(cell_container)
+
+    def _update_loading_progress(self, *_):
+        """Advance the progress bar over the loading duration."""
+        if not self.progress_bar or not self.loading_start_time:
+            return False
+
+        elapsed = time.time() - self.loading_start_time
+        progress = min((elapsed / self.loading_duration) * 100, 100)
+        self.progress_bar.value = progress
+        return progress < 100
+
+    def _display_results(self, info, parsed):
+        """Render OCR results after loading completes."""
+        if self.loading_event:
+            self.loading_event.cancel()
+            self.loading_event = None
+        if self.progress_bar:
+            self.progress_bar.value = 100
+
         self.ocr_text = info
         self.parsed = parsed
 
         # Save structured outputs if parsing was successful
         if parsed is not None:
             ocr_engine.save_outputs(parsed)
+
+        self._schedule_shift_notifications()
 
         # Save debug info to JSON file
         with open("userdata/debug_parsed.json", "w", encoding="utf-8") as f:
@@ -440,16 +595,78 @@ class HomeScreen(Screen):
 
     def reset_ui(self):
         """Reset UI to initial state for uploading a new image"""
-        self.root_layout.clear_widgets()
+        self._clear_notifications()
+        self._build_start_screen()
 
-        # Recreate upload button
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
-        self.upload_button.bind(on_press=self.open_filechooser)
-        self.root_layout.add_widget(self.title_label)
-        self.root_layout.add_widget(self.upload_button)
+    def _clear_notifications(self):
+        """Cancel any scheduled shift notifications."""
+        for event in self.notification_events:
+            try:
+                event.cancel()
+            except Exception:
+                pass
+        self.notification_events.clear()
 
-        # Reset parsed data
-        self.parsed = None
+    def _schedule_shift_notifications(self):
+        """Schedule in-app reminders 45 minutes before each shift starts."""
+        self._clear_notifications()
+
+        if not self.parsed or not self.parsed.get("records"):
+            return
+
+        now = datetime.datetime.now()
+        for record in self.parsed["records"]:
+            date_str = record.get("date")
+            shift_code = record.get("shift_code")
+            if not date_str or shift_code not in ocr_engine.SHIFT_MAP:
+                continue
+
+            try:
+                shift_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+
+            start_hour = ocr_engine.SHIFT_MAP[shift_code][1]
+            start_dt = datetime.datetime.combine(shift_date, datetime.time(hour=start_hour))
+            notify_at = start_dt - datetime.timedelta(minutes=45)
+            delay = (notify_at - now).total_seconds()
+            if delay <= 0:
+                continue
+
+            event = Clock.schedule_once(
+                lambda *_dt, rec=record, starts=start_dt: self._show_notification(rec, starts), delay
+            )
+            self.notification_events.append(event)
+
+    def _show_notification(self, record, start_dt):
+        """Display a dismissible popup for an upcoming shift."""
+        shift_label = record.get("shift_type") or ocr_engine.SHIFT_MAP.get(record.get("shift_code"), ("Shift",))[0]
+        minutes_remaining = max(int((start_dt - datetime.datetime.now()).total_seconds() // 60), 0)
+        msg = f"{shift_label} shift at {start_dt.strftime('%Y-%m-%d %H:%M')} starts in {minutes_remaining} minutes."
+
+        content = BoxLayout(orientation="vertical", padding=12, spacing=12)
+        content.bind(size=self._tint_card, pos=self._tint_card)
+        content.add_widget(Label(
+            text=msg,
+            color=self._hex_to_rgb(TEXT_COLOR),
+            halign="center",
+            valign="middle",
+            font_name=self.font_name,
+            text_size=(Window.width * 0.6, None),
+        ))
+
+        dismiss_btn = self._create_button("Dismiss", size_hint=(1, None), height=48)
+        content.add_widget(dismiss_btn)
+
+        popup = Popup(
+            title="Shift Reminder",
+            content=content,
+            size_hint=(0.7, 0.4),
+            background_color=self._hex_to_rgb(CARD_COLOR),
+        )
+
+        dismiss_btn.bind(on_press=lambda *_: popup.dismiss())
+        popup.open()
 
 
 # ---------- Root Manager ----------
