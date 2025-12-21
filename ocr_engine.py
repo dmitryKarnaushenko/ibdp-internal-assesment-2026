@@ -225,6 +225,10 @@ def load_sample_parsed():
     return copy.deepcopy(FALLBACK_SAMPLE_PARSED)
 
 
+def load_saved_outputs():
+    """Return the most recently saved parsed shifts without surfacing prefab data."""
+    parsed = None
+    info = "Upload an image to get started."
 def load_saved_outputs(use_prefab_data=False):
     """Return the most recently saved parsed shifts, falling back to prefab data.
 
@@ -246,10 +250,6 @@ def load_saved_outputs(use_prefab_data=False):
     except Exception:
         parsed = None
         info = "Saved shifts could not be loaded."
-
-    if (not parsed or not parsed.get("records")) and use_prefab_data:
-        parsed = load_sample_parsed()
-        info = "Prefab schedule ready to view."
 
     return info, parsed
 
