@@ -225,15 +225,13 @@ def load_sample_parsed():
     return copy.deepcopy(FALLBACK_SAMPLE_PARSED)
 
 
-def load_saved_outputs():
-    """Return the most recently saved parsed shifts without surfacing prefab data."""
-    parsed = None
-    info = "Upload an image to get started."
 def load_saved_outputs(use_prefab_data=False):
-    """Return the most recently saved parsed shifts, falling back to prefab data.
+    """Return the most recently saved parsed shifts.
 
     Args:
-        use_prefab_data: When True, return prefab demo data if no saved JSON exists.
+        use_prefab_data: When ``True``, fall back to prefab demo data if no saved
+            JSON exists. When ``False``, return ``None`` when no user data is
+            available so the UI can prompt for a first upload.
 
     Returns:
         A tuple of (status_message, parsed_dict or None)
@@ -250,6 +248,10 @@ def load_saved_outputs(use_prefab_data=False):
     except Exception:
         parsed = None
         info = "Saved shifts could not be loaded."
+
+    if parsed is None and use_prefab_data:
+        parsed = load_sample_parsed()
+        info = "Loaded prefab sample shifts."
 
     return info, parsed
 
