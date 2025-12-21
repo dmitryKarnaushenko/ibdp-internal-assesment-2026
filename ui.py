@@ -201,6 +201,9 @@ class HomeScreen(Screen):
 
         self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
         self.view_saved_button.bind(on_press=self.show_saved_shifts)
+        self.view_saved_button.disabled = self.persisted_parsed is None
+        self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
+        self.view_saved_button.bind(on_press=self.show_saved_shifts)
         self.view_saved_button.disabled = not has_saved_data
         self.view_saved_button.disabled_background_hex = BUTTON_COLOR_DISABLED
         self.view_saved_button.disabled_color = self._hex_to_rgb(DISABLED_TEXT_COLOR)
