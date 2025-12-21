@@ -29,6 +29,8 @@ CARD_COLOR = "#132643"
 TEXT_COLOR = "#FFFFFF"
 BUTTON_COLOR = "#3E5C88"
 BUTTON_COLOR_ACTIVE = "#4F709F"
+BUTTON_COLOR_DISABLED = "#1F2B3D"
+DISABLED_TEXT_COLOR = "#8B9AAF"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
 SHIFT_COLORS = {
@@ -243,8 +245,14 @@ class HomeScreen(Screen):
     def _round_button(self, instance, *_):
         """Apply a rounded rectangle background to a button."""
         instance.canvas.before.clear()
+        is_disabled = getattr(instance, "disabled", False)
+        bg_hex = (
+            getattr(instance, "disabled_background_hex", BUTTON_COLOR_DISABLED)
+            if is_disabled
+            else getattr(instance, "background_hex", BUTTON_COLOR)
+        )
         with instance.canvas.before:
-            Color(*self._hex_to_rgb(getattr(instance, "background_hex", BUTTON_COLOR)))
+            Color(*self._hex_to_rgb(bg_hex))
             RoundedRectangle(size=instance.size, pos=instance.pos, radius=[18, 18, 18, 18])
 
     def _on_button_state(self, instance, value):
