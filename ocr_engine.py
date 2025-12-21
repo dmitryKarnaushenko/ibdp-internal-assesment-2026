@@ -225,6 +225,35 @@ def load_sample_parsed():
     return copy.deepcopy(FALLBACK_SAMPLE_PARSED)
 
 
+def load_saved_outputs(use_prefab_data=False):
+    """Return the most recently saved parsed shifts, falling back to prefab data.
+
+    Args:
+        use_prefab_data: When True, return prefab demo data if no saved JSON exists.
+
+    Returns:
+        A tuple of (status_message, parsed_dict or None)
+    """
+    parsed = None
+    info = "No saved shifts found yet. Upload a schedule to begin."
+
+    try:
+        if os.path.exists(JSON_PATH):
+            with open(JSON_PATH, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
+                if parsed:
+                    info = "Loaded saved shifts from your last upload."
+    except Exception:
+        parsed = None
+        info = "Saved shifts could not be loaded."
+
+    if (not parsed or not parsed.get("records")) and use_prefab_data:
+        parsed = load_sample_parsed()
+        info = "Prefab schedule ready to view."
+
+    return info, parsed
+
+
 def parse_schedule(cv_img):
     """
     Main function to parse a schedule image.
