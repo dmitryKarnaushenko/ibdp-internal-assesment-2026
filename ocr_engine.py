@@ -235,7 +235,7 @@ def load_saved_outputs(use_prefab_data=False):
         A tuple of (status_message, parsed_dict or None)
     """
     parsed = None
-    info = "No saved shifts found yet. Upload a schedule to begin."
+    info = "Upload an image to get started."
 
     try:
         if os.path.exists(JSON_PATH):

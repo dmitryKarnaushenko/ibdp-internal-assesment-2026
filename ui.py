@@ -29,6 +29,8 @@ CARD_COLOR = "#132643"
 TEXT_COLOR = "#FFFFFF"
 BUTTON_COLOR = "#3E5C88"
 BUTTON_COLOR_ACTIVE = "#4F709F"
+BUTTON_COLOR_DISABLED = "#4B5563"
+DISABLED_TEXT_COLOR = "#8B9AAF"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
 SHIFT_COLORS = {
@@ -181,7 +183,8 @@ class HomeScreen(Screen):
         self.root_layout.clear_widgets()
         self.root_layout.add_widget(self.title_label)
 
-        status = self.persisted_info or ""
+        has_saved_data = self.persisted_parsed is not None
+        status = "Upload an image to get started." if not has_saved_data else (self.persisted_info or "")
         status_label = Label(
             text=status,
             color=self._hex_to_rgb(TEXT_COLOR),
@@ -199,6 +202,12 @@ class HomeScreen(Screen):
         self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
         self.view_saved_button.bind(on_press=self.show_saved_shifts)
         self.view_saved_button.disabled = self.persisted_parsed is None
+        self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
+        self.view_saved_button.bind(on_press=self.show_saved_shifts)
+        self.view_saved_button.disabled = not has_saved_data
+        self.view_saved_button.disabled_background_hex = BUTTON_COLOR_DISABLED
+        self.view_saved_button.disabled_color = self._hex_to_rgb(DISABLED_TEXT_COLOR)
+        self._round_button(self.view_saved_button)
 
         self.upload_button = self._create_button("Upload New Image", size_hint=(1, 0.5), font_size=22)
         self.upload_button.bind(on_press=self.open_filechooser)
@@ -243,8 +252,14 @@ class HomeScreen(Screen):
     def _round_button(self, instance, *_):
         """Apply a rounded rectangle background to a button."""
         instance.canvas.before.clear()
+        is_disabled = getattr(instance, "disabled", False)
+        bg_hex = (
+            getattr(instance, "disabled_background_hex", BUTTON_COLOR_DISABLED)
+            if is_disabled
+            else getattr(instance, "background_hex", BUTTON_COLOR)
+        )
         with instance.canvas.before:
-            Color(*self._hex_to_rgb(getattr(instance, "background_hex", BUTTON_COLOR)))
+            Color(*self._hex_to_rgb(bg_hex))
             RoundedRectangle(size=instance.size, pos=instance.pos, radius=[18, 18, 18, 18])
 
     def _on_button_state(self, instance, value):
