@@ -29,7 +29,7 @@ CARD_COLOR = "#132643"
 TEXT_COLOR = "#FFFFFF"
 BUTTON_COLOR = "#3E5C88"
 BUTTON_COLOR_ACTIVE = "#4F709F"
-BUTTON_COLOR_DISABLED = "#1F2B3D"
+BUTTON_COLOR_DISABLED = "#4B5563"
 DISABLED_TEXT_COLOR = "#8B9AAF"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
@@ -174,7 +174,12 @@ class HomeScreen(Screen):
 
     def _load_persisted_data(self):
         """Load previously saved shifts (or prefab data in demo mode)."""
-        info, parsed = ocr_engine.load_saved_outputs(self.use_prefab_data)
+        if self.use_prefab_data:
+            self.persisted_parsed = None
+            self.persisted_info = "Upload an image to get started."
+            return
+
+        info, parsed = ocr_engine.load_saved_outputs()
         self.persisted_parsed = parsed if parsed else None
         self.persisted_info = info
 
@@ -183,7 +188,8 @@ class HomeScreen(Screen):
         self.root_layout.clear_widgets()
         self.root_layout.add_widget(self.title_label)
 
-        status = self.persisted_info or ""
+        has_saved_data = self.persisted_parsed is not None
+        status = "Upload an image to get started." if not has_saved_data else (self.persisted_info or "")
         status_label = Label(
             text=status,
             color=self._hex_to_rgb(TEXT_COLOR),
@@ -200,7 +206,10 @@ class HomeScreen(Screen):
 
         self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
         self.view_saved_button.bind(on_press=self.show_saved_shifts)
-        self.view_saved_button.disabled = self.persisted_parsed is None
+        self.view_saved_button.disabled = not has_saved_data
+        self.view_saved_button.disabled_background_hex = BUTTON_COLOR_DISABLED
+        self.view_saved_button.disabled_color = self._hex_to_rgb(DISABLED_TEXT_COLOR)
+        self._round_button(self.view_saved_button)
 
         self.upload_button = self._create_button("Upload New Image", size_hint=(1, 0.5), font_size=22)
         self.upload_button.bind(on_press=self.open_filechooser)
@@ -322,9 +331,7 @@ class HomeScreen(Screen):
             parsed = ocr_engine.load_sample_parsed()
             if not parsed.get("records"):
                 parsed = ocr_engine.FALLBACK_SAMPLE_PARSED
-                info = "Loaded built-in prefab schedule (asset unavailable)."
-            else:
-                info = "Loaded prefab schedule for demo mode."
+            info = "Schedule ready to view."
         else:
             _, info, parsed = ocr_engine.process_image(file_path)
 
