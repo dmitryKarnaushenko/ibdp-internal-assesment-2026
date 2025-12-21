@@ -30,6 +30,9 @@ TEXT_COLOR = "#FFFFFF"
 BUTTON_COLOR = "#3E5C88"
 BUTTON_COLOR_ACTIVE = "#4F709F"
 BUTTON_COLOR_DISABLED = "#4B5563"
+BUTTON_COLOR = "#3E5C88"
+BUTTON_COLOR_ACTIVE = "#4F709F"
+BUTTON_COLOR_DISABLED = "#4B5563"
 DISABLED_TEXT_COLOR = "#8B9AAF"
 
 # Define colors for different shift types in calendar view using RGBA values (0-1 range)
@@ -193,6 +196,11 @@ class HomeScreen(Screen):
         status_label = Label(
             text=status,
             color=self._hex_to_rgb(TEXT_COLOR),
+        has_saved_data = self.persisted_parsed is not None
+        status = "Upload an image to get started." if not has_saved_data else (self.persisted_info or "")
+        status_label = Label(
+            text=status,
+            color=self._hex_to_rgb(TEXT_COLOR),
             font_size="16sp",
             halign="center",
             valign="middle",
@@ -204,6 +212,15 @@ class HomeScreen(Screen):
 
         btn_container = BoxLayout(orientation="vertical", spacing=12, size_hint=(1, 0.36))
 
+        self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
+        self.view_saved_button.bind(on_press=self.show_saved_shifts)
+        self.view_saved_button.disabled = not has_saved_data
+        self.view_saved_button.disabled_background_hex = BUTTON_COLOR_DISABLED
+        self.view_saved_button.disabled_color = self._hex_to_rgb(DISABLED_TEXT_COLOR)
+        self._round_button(self.view_saved_button)
+        self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
+        self.view_saved_button.bind(on_press=self.show_saved_shifts)
+        self.view_saved_button.disabled = self.persisted_parsed is None
         self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
         self.view_saved_button.bind(on_press=self.show_saved_shifts)
         self.view_saved_button.disabled = not has_saved_data

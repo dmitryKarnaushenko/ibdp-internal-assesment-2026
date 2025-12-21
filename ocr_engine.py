@@ -229,6 +229,17 @@ def load_saved_outputs():
     """Return the most recently saved parsed shifts without surfacing prefab data."""
     parsed = None
     info = "Upload an image to get started."
+def load_saved_outputs(use_prefab_data=False):
+    """Return the most recently saved parsed shifts, falling back to prefab data.
+
+    Args:
+        use_prefab_data: When True, return prefab demo data if no saved JSON exists.
+
+    Returns:
+        A tuple of (status_message, parsed_dict or None)
+    """
+    parsed = None
+    info = "Upload an image to get started."
 
     try:
         if os.path.exists(JSON_PATH):
