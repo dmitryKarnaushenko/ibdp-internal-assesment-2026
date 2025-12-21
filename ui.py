@@ -161,7 +161,6 @@ class HomeScreen(Screen):
             size_hint=size_hint,
             height=height,
             color=self._hex_to_rgb(TEXT_COLOR),
-            disabled_color=self._hex_to_rgb(DISABLED_TEXT_COLOR),
             background_color=(0, 0, 0, 0),
             background_normal='',
             background_down='',
@@ -169,26 +168,22 @@ class HomeScreen(Screen):
             font_name=self.font_name,
         )
         btn.background_hex = BUTTON_COLOR
-        btn.disabled_background_hex = BUTTON_COLOR_DISABLED
         btn.bind(size=self._round_button, pos=self._round_button, state=self._on_button_state)
         self._round_button(btn)
         return btn
 
     def _load_persisted_data(self):
         """Load previously saved shifts (or prefab data in demo mode)."""
-        info, parsed = ocr_engine.load_saved_outputs(
-            self.use_prefab_data, allow_prefab_fallback=not self.use_prefab_data
-        )
-        has_saved_data = parsed and parsed.get("records")
-        self.persisted_parsed = parsed if has_saved_data else None
-        self.persisted_info = info if has_saved_data else ""
+        info, parsed = ocr_engine.load_saved_outputs(self.use_prefab_data)
+        self.persisted_parsed = parsed if parsed else None
+        self.persisted_info = info
 
     def _build_start_menu(self):
         """Render the landing view with options to view saved data or upload new."""
         self.root_layout.clear_widgets()
         self.root_layout.add_widget(self.title_label)
 
-        status = self.persisted_info or "Upload an image to get started."
+        status = self.persisted_info or ""
         status_label = Label(
             text=status,
             color=self._hex_to_rgb(TEXT_COLOR),
@@ -206,7 +201,6 @@ class HomeScreen(Screen):
         self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
         self.view_saved_button.bind(on_press=self.show_saved_shifts)
         self.view_saved_button.disabled = self.persisted_parsed is None
-        self._round_button(self.view_saved_button)
 
         self.upload_button = self._create_button("Upload New Image", size_hint=(1, 0.5), font_size=22)
         self.upload_button.bind(on_press=self.open_filechooser)
