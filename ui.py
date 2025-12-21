@@ -177,14 +177,16 @@ class HomeScreen(Screen):
 
     def _load_persisted_data(self):
         """Load previously saved shifts (or prefab data in demo mode)."""
-        if self.use_prefab_data:
+        info, parsed = ocr_engine.load_saved_outputs(use_prefab_data=self.use_prefab_data)
+
+        # Treat missing or empty parsed data as no saved shifts so the UI can
+        # prompt the user to upload an image before enabling saved views.
+        if not parsed or not parsed.get("records"):
             self.persisted_parsed = None
             self.persisted_info = "Upload an image to get started."
-            return
-
-        info, parsed = ocr_engine.load_saved_outputs()
-        self.persisted_parsed = parsed if parsed else None
-        self.persisted_info = info
+        else:
+            self.persisted_parsed = parsed
+            self.persisted_info = info or "Loaded saved shifts from your last upload."
 
     def _build_start_menu(self):
         """Render the landing view with options to view saved data or upload new."""
