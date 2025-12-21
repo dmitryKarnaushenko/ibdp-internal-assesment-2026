@@ -117,21 +117,20 @@ class HomeScreen(Screen):
             bold=True,
             font_name=self.font_name,
         )
-        self.root_layout.add_widget(self.title_label)
-
-        # Upload button - allows users to select an image file
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
-        # Bind button press to open file chooser
-        self.upload_button.bind(on_press=self.open_filechooser)
-        self.root_layout.add_widget(self.upload_button)
-
-        # Add the root layout to the screen
-        self.add_widget(self.root_layout)
 
         # Initialize instance variables
         self.ocr_text = ""  # Raw OCR output text
         self.parsed = None  # Parsed schedule data
         self.calendar_grid = None
+        self.persisted_parsed = None
+        self.persisted_info = None
+
+        # Add the root layout to the screen
+        self.add_widget(self.root_layout)
+
+        # Build the start menu and load any previously saved data
+        self._load_persisted_data()
+        self._build_start_menu()
 
     def _hex_to_rgb(self, hex_color):
         """Convert hex color string to kivy RGBA tuple (0-1 range)"""
@@ -170,6 +169,78 @@ class HomeScreen(Screen):
         btn.bind(size=self._round_button, pos=self._round_button, state=self._on_button_state)
         self._round_button(btn)
         return btn
+
+    def _load_persisted_data(self):
+        """Load previously saved shifts (or prefab data in demo mode)."""
+        info, parsed = ocr_engine.load_saved_outputs(
+            self.use_prefab_data, allow_prefab_fallback=not self.use_prefab_data
+        )
+        self.persisted_parsed = parsed if parsed else None
+        self.persisted_info = info
+
+    def _build_start_menu(self):
+        """Render the landing view with options to view saved data or upload new."""
+        self.root_layout.clear_widgets()
+        self.root_layout.add_widget(self.title_label)
+
+        status = self.persisted_info or ""
+        status_label = Label(
+            text=status,
+            color=self._hex_to_rgb(TEXT_COLOR),
+            font_size="16sp",
+            halign="center",
+            valign="middle",
+            size_hint=(1, 0.26),
+            text_size=(Window.width * 0.9, None),
+            font_name=self.font_name,
+        )
+        self.root_layout.add_widget(status_label)
+
+        btn_container = BoxLayout(orientation="vertical", spacing=12, size_hint=(1, 0.36))
+
+        self.view_saved_button = self._create_button("View Saved Shifts", size_hint=(1, 0.5), font_size=22)
+        self.view_saved_button.bind(on_press=self.show_saved_shifts)
+        self.view_saved_button.disabled = self.persisted_parsed is None
+
+        self.upload_button = self._create_button("Upload New Image", size_hint=(1, 0.5), font_size=22)
+        self.upload_button.bind(on_press=self.open_filechooser)
+
+        btn_container.add_widget(self.view_saved_button)
+        btn_container.add_widget(self.upload_button)
+
+        self.root_layout.add_widget(btn_container)
+
+    def show_saved_shifts(self, *_):
+        """Display the persisted shifts if available."""
+        if not self.persisted_parsed:
+            self._show_status_popup("No saved shifts available yet. Upload a new image to begin.")
+            return
+
+        self._display_results(self.persisted_info or "Saved shifts loaded.", self.persisted_parsed)
+
+    def _show_status_popup(self, message):
+        content = BoxLayout(orientation="vertical", padding=12, spacing=12)
+        content.bind(size=self._tint_card, pos=self._tint_card)
+        content.add_widget(Label(
+            text=message,
+            color=self._hex_to_rgb(TEXT_COLOR),
+            halign="center",
+            valign="middle",
+            font_name=self.font_name,
+            text_size=(Window.width * 0.6, None),
+        ))
+
+        close_btn = self._create_button("Close", size_hint=(1, None), height=48)
+        content.add_widget(close_btn)
+
+        popup = Popup(
+            title="Shift Tracker",
+            content=content,
+            size_hint=(0.7, 0.4),
+            background_color=self._hex_to_rgb(CARD_COLOR),
+        )
+        close_btn.bind(on_press=lambda *_: popup.dismiss())
+        popup.open()
 
     def _round_button(self, instance, *_):
         """Apply a rounded rectangle background to a button."""
@@ -319,6 +390,8 @@ class HomeScreen(Screen):
 
         self.ocr_text = info
         self.parsed = parsed
+        self.persisted_parsed = parsed
+        self.persisted_info = info or "Saved shifts loaded."
 
         # Save structured outputs if parsing was successful
         if parsed is not None:
@@ -526,16 +599,8 @@ class HomeScreen(Screen):
     def reset_ui(self):
         """Reset UI to initial state for uploading a new image"""
         self._clear_notifications()
-        self.root_layout.clear_widgets()
-
-        # Recreate upload button
-        self.upload_button = self._create_button("Upload Image", size_hint=(1, 0.18), font_size=24)
-        self.upload_button.bind(on_press=self.open_filechooser)
-        self.root_layout.add_widget(self.title_label)
-        self.root_layout.add_widget(self.upload_button)
-
-        # Reset parsed data
-        self.parsed = None
+        self._load_persisted_data()
+        self._build_start_menu()
 
     def _clear_notifications(self):
         """Cancel any scheduled shift notifications."""
