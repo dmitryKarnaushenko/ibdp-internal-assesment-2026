@@ -225,12 +225,11 @@ def load_sample_parsed():
     return copy.deepcopy(FALLBACK_SAMPLE_PARSED)
 
 
-def load_saved_outputs(use_prefab_data=False, allow_prefab_fallback=True):
-    """Return the most recently saved parsed shifts, optionally using prefab data.
+def load_saved_outputs(use_prefab_data=False):
+    """Return the most recently saved parsed shifts, falling back to prefab data.
 
     Args:
-        use_prefab_data: When True, allow using prefab demo data.
-        allow_prefab_fallback: When True, fall back to prefab data if nothing is saved.
+        use_prefab_data: When True, return prefab demo data if no saved JSON exists.
 
     Returns:
         A tuple of (status_message, parsed_dict or None)
@@ -248,11 +247,7 @@ def load_saved_outputs(use_prefab_data=False, allow_prefab_fallback=True):
         parsed = None
         info = "Saved shifts could not be loaded."
 
-    if (
-        allow_prefab_fallback
-        and use_prefab_data
-        and (not parsed or not parsed.get("records"))
-    ):
+    if (not parsed or not parsed.get("records")) and use_prefab_data:
         parsed = load_sample_parsed()
         info = "Prefab schedule ready to view."
 

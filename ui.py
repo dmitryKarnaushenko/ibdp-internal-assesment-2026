@@ -172,9 +172,7 @@ class HomeScreen(Screen):
 
     def _load_persisted_data(self):
         """Load previously saved shifts (or prefab data in demo mode)."""
-        info, parsed = ocr_engine.load_saved_outputs(
-            self.use_prefab_data, allow_prefab_fallback=not self.use_prefab_data
-        )
+        info, parsed = ocr_engine.load_saved_outputs(self.use_prefab_data)
         self.persisted_parsed = parsed if parsed else None
         self.persisted_info = info
 
